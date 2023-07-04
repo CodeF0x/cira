@@ -21,3 +21,4 @@ Cargo.lock
 
 # Database
 cira-backend.sqlite
+test-backend.sqlite

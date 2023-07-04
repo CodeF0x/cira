@@ -4,12 +4,27 @@ use dotenvy::dotenv;
 use std::env;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub fn establish_connection() -> SqliteConnection {
-    dotenv().ok();
+pub struct DataBase {
+    pub connection: SqliteConnection,
+}
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env");
-    SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
+impl DataBase {
+    pub fn new() -> Self {
+        dotenv().ok();
+
+        #[cfg(test)]
+        let variable_name = "TEST_DATABASE_URL";
+
+        #[cfg(not(test))]
+        let variable_name = "DATABASE_URL";
+
+        let database_url = env::var(variable_name).expect("Could not find database url in .env");
+
+        DataBase {
+            connection: SqliteConnection::establish(&database_url)
+                .unwrap_or_else(|_| panic!("Error connecting to {}", database_url)),
+        }
+    }
 }
 
 pub fn create_ticket(
