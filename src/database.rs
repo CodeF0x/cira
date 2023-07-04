@@ -1,4 +1,5 @@
-use crate::models::NewTicket;
+use crate::models::{NewTicket, Ticket};
+use crate::schema::tickets::dsl::tickets;
 use diesel::{Connection, QueryResult, RunQueryDsl, SqliteConnection};
 use dotenvy::dotenv;
 use std::env;
@@ -47,4 +48,8 @@ pub fn create_ticket(
     diesel::insert_into(tickets::table)
         .values(&new_ticket)
         .execute(connection)
+}
+
+pub fn get_all_tickets(connection: &mut SqliteConnection) -> QueryResult<Vec<Ticket>> {
+    tickets.load::<Ticket>(connection)
 }

@@ -1,7 +1,8 @@
 use crate::schema::tickets;
 use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Deserialize, Serialize)]
 #[diesel(table_name = crate::schema::tickets)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Ticket {
