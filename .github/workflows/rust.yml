@@ -21,6 +21,6 @@ jobs:
     - name: Prepare Test DB
       run: diesel migration run --database-url test-backend.sqlite
     - name: Build
-      run: cargo build --verbose
+      run: cargo build
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test
