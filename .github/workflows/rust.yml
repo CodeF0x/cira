@@ -1,0 +1,26 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Diesel
+      run: cargo install diesel_cli --no-default-features --features sqlite
+    - name: Prepare Test DB
+      run: diesel migration run --database-url test-backend.sqlite
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
