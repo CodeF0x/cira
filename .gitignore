@@ -16,9 +16,6 @@ Cargo.lock
 # IDE
 .idea/
 
-# Config
-.env
-
 # Database
 cira-backend.sqlite
 test-backend.sqlite
