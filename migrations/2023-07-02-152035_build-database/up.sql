@@ -4,5 +4,6 @@ create table tickets (
     title varchar not null,
     body text not null,
     created text not null,
-    last_modified text not null
+    last_modified text not null,
+    labels text not null
 );

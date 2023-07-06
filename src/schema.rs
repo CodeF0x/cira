@@ -7,5 +7,6 @@ diesel::table! {
         body -> Text,
         created -> Text,
         last_modified -> Text,
+        labels -> Text,
     }
 }

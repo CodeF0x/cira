@@ -1,4 +1,4 @@
-use crate::models::{NewTicket, Ticket};
+use crate::models::{Label, NewTicket, SqliteTicket};
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::id;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
@@ -33,6 +33,7 @@ pub fn create_ticket(
     connection: &mut SqliteConnection,
     title: String,
     body: String,
+    labels: Vec<Label>,
 ) -> QueryResult<usize> {
     use crate::schema::tickets;
 
@@ -44,6 +45,7 @@ pub fn create_ticket(
         body,
         created: now_in_millis.as_millis().to_string(),
         last_modified: now_in_millis.as_millis().to_string(),
+        labels: serde_json::to_string(&labels).unwrap(),
     };
 
     diesel::insert_into(tickets::table)
@@ -51,8 +53,8 @@ pub fn create_ticket(
         .execute(connection)
 }
 
-pub fn get_all_tickets(connection: &mut SqliteConnection) -> QueryResult<Vec<Ticket>> {
-    tickets.load::<Ticket>(connection)
+pub fn get_all_tickets(connection: &mut SqliteConnection) -> QueryResult<Vec<SqliteTicket>> {
+    tickets.load::<SqliteTicket>(connection)
 }
 
 pub fn delete_ticket(connection: &mut SqliteConnection, ticked_id: i32) -> QueryResult<usize> {
@@ -72,12 +74,13 @@ pub fn setup_database() {
         // moment as of writing this
         created: "1688587842815".to_string(),
         last_modified: "1688587842815".to_string(),
+        labels: "[]".to_string(),
     };
 
     diesel::sql_query("drop table tickets")
         .execute(&mut database.connection)
         .expect("Could not drop table tickets in test database");
-    diesel::sql_query("create table tickets (id integer primary key not null, title varchar not null, body text not null, created text not null, last_modified text not null);")
+    diesel::sql_query("create table tickets (id integer primary key not null, title varchar not null, body text not null, created text not null, last_modified text not null, labels text not null);")
         .execute(&mut database.connection)
         .expect("Could not re-create table in test database");
     diesel::insert_into(tickets)
