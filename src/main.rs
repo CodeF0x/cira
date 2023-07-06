@@ -6,7 +6,6 @@ mod schema;
 use crate::database::{create_ticket, delete_ticket, get_all_tickets, DataBase};
 use crate::models::Ticket;
 use crate::payloads::{TicketPayload, TicketToDelete};
-use actix_web::http::StatusCode;
 use actix_web::{delete, get, post, App, HttpResponse, HttpServer, Responder};
 use std::io::Result;
 
@@ -35,12 +34,13 @@ async fn create(req_body: String) -> impl Responder {
             payload.body,
             payload.labels,
         ) {
-            Ok(_) => HttpResponse::new(StatusCode::CREATED),
-            Err(_) => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
+            Ok(ticket) => HttpResponse::Created().json(ticket.to_ticket()),
+            Err(err) => HttpResponse::InternalServerError()
+                .json(format!("Could not create ticket: {:?}", err)),
         };
     }
 
-    HttpResponse::new(StatusCode::BAD_REQUEST)
+    HttpResponse::BadRequest().json("Malformed JSON sent.")
 }
 
 #[get("/tickets")]
@@ -53,23 +53,14 @@ async fn get_tickets() -> impl Responder {
         Ok(tickets) => {
             let tickets: Vec<Ticket> = tickets
                 .iter()
-                .map(|ticket| {
-                    let labels = serde_json::from_str(&ticket.labels)
-                        .expect("Could not parse labels array. This should not be possible.");
-                    return Ticket {
-                        id: ticket.id.clone(),
-                        title: ticket.title.to_string(),
-                        body: ticket.body.to_string(),
-                        created: ticket.created.clone(),
-                        last_modified: ticket.last_modified.clone(),
-                        labels,
-                    };
-                })
+                .map(|sqlite_ticket| sqlite_ticket.to_ticket())
                 .collect();
 
             return HttpResponse::Ok().json(tickets);
         }
-        Err(_) => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(err) => {
+            HttpResponse::InternalServerError().json(format!("Could not get tickets: {:?}", err))
+        }
     }
 }
 
@@ -78,19 +69,16 @@ async fn delete(req_body: String) -> impl Responder {
     let mut database = DataBase::new();
 
     // todo: refactor once understood how to test with JSON extractors
-    if let Ok(ticket) = serde_json::from_str::<TicketToDelete>(&req_body) {
-        return match delete_ticket(&mut database.connection, ticket.id) {
-            Ok(rows_affected) => {
-                if rows_affected == 0 {
-                    return HttpResponse::new(StatusCode::NOT_FOUND);
-                }
-                HttpResponse::new(StatusCode::OK)
-            },
-            Err(_) => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
+    if let Ok(to_delete) = serde_json::from_str::<TicketToDelete>(&req_body) {
+        return match delete_ticket(&mut database.connection, to_delete.id) {
+            Ok(sqlite_ticket) =>
+                HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
+            Err(_) => HttpResponse::NotFound()
+                .json(format!("No ticket with id {}", to_delete.id))
         };
     }
 
-    HttpResponse::new(StatusCode::BAD_REQUEST)
+    HttpResponse::BadRequest().json("Malformed JSON sent.")
 }
 
 #[cfg(test)]
@@ -103,6 +91,7 @@ mod tests {
         use super::*;
         use crate::create;
         use crate::database::setup_database;
+        use actix_web::http::StatusCode;
 
         #[actix_web::test]
         // serial is needed because sqlite does not support parallel write access -> run everything serially
@@ -119,7 +108,7 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert!(response.status().is_client_error());
-            assert_eq!(response.status().as_u16(), 400);
+            assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
         }
 
         #[actix_web::test]
@@ -127,11 +116,13 @@ mod tests {
         async fn test_create_ticket() {
             setup_database();
 
+            let ticket_payload = "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [] }";
+
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
                 .uri("/tickets")
                 .set_payload(
-                    "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [] }",
+                    ticket_payload
                 )
                 .to_request();
 
@@ -146,7 +137,7 @@ mod tests {
         use super::*;
         use crate::database::setup_database;
         use crate::get_tickets;
-        use crate::models::{Ticket};
+        use crate::models::Ticket;
         use actix_web::test;
 
         #[actix_web::test]
@@ -167,6 +158,7 @@ mod tests {
         use super::*;
         use crate::database::setup_database;
         use crate::delete;
+        use actix_web::http::StatusCode;
 
         #[actix_web::test]
         #[serial]
@@ -182,7 +174,7 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert!(response.status().is_success());
-            assert_eq!(response.status().as_u16(), 200);
+            assert_eq!(response.status().as_u16(), StatusCode::OK);
         }
 
         #[actix_web::test]
@@ -199,7 +191,7 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert!(response.status().is_client_error());
-            assert_eq!(response.status().as_u16(), 404);
+            assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
         }
 
         #[actix_web::test]
@@ -216,7 +208,7 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert!(response.status().is_client_error());
-            assert_eq!(response.status().as_u16(), 400);
+            assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
         }
     }
 }

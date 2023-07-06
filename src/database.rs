@@ -34,7 +34,7 @@ pub fn create_ticket(
     title: String,
     body: String,
     labels: Vec<Label>,
-) -> QueryResult<usize> {
+) -> QueryResult<SqliteTicket> {
     use crate::schema::tickets;
 
     let now_in_millis = SystemTime::now()
@@ -50,15 +50,15 @@ pub fn create_ticket(
 
     diesel::insert_into(tickets::table)
         .values(&new_ticket)
-        .execute(connection)
+        .get_result(connection)
 }
 
 pub fn get_all_tickets(connection: &mut SqliteConnection) -> QueryResult<Vec<SqliteTicket>> {
     tickets.load::<SqliteTicket>(connection)
 }
 
-pub fn delete_ticket(connection: &mut SqliteConnection, ticked_id: i32) -> QueryResult<usize> {
-    diesel::delete(tickets.filter(id.eq(ticked_id))).execute(connection)
+pub fn delete_ticket(connection: &mut SqliteConnection, ticked_id: i32) -> QueryResult<SqliteTicket> {
+    diesel::delete(tickets.filter(id.eq(ticked_id))).get_result(connection)
 }
 
 /**
