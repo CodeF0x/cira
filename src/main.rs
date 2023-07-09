@@ -3,10 +3,11 @@ mod models;
 mod payloads;
 mod schema;
 
-use crate::database::{create_ticket, delete_ticket, get_all_tickets, DataBase};
+use crate::database::{create_ticket, delete_ticket, edit_ticket, get_all_tickets, DataBase};
 use crate::models::Ticket;
 use crate::payloads::{TicketPayload, TicketToDelete};
-use actix_web::{delete, get, post, App, HttpResponse, HttpServer, Responder};
+use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use diesel::result::Error;
 use std::io::Result;
 
 #[actix_web::main]
@@ -16,6 +17,7 @@ async fn main() -> Result<()> {
             .service(create)
             .service(get_tickets)
             .service(delete)
+            .service(edit)
     })
     .bind(("localhost", 8080))?
     .run()
@@ -64,6 +66,36 @@ async fn get_tickets() -> impl Responder {
     }
 }
 
+#[post("/tickets/{id}")]
+async fn edit(req: HttpRequest, req_body: String) -> impl Responder {
+    let ticket_id: i32 = req
+        .match_info()
+        .get("id")
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
+
+    if ticket_id < 1 {
+        return HttpResponse::BadRequest().json("ID must be an integer higher than 0");
+    }
+
+    if let Ok(ticket_payload) = serde_json::from_str::<TicketPayload>(&req_body) {
+        let mut database = DataBase::new();
+
+        return match edit_ticket(&mut database.connection, ticket_payload, ticket_id) {
+            Ok(updated_ticket) => HttpResponse::Ok().json(updated_ticket.to_ticket()),
+            Err(err) => match err {
+                Error::NotFound => HttpResponse::NotFound()
+                    .json(format!("Could not find ticket with id {}", ticket_id)),
+                _ => HttpResponse::InternalServerError()
+                    .json(format!("Could not update ticket with id {}", ticket_id)),
+            },
+        };
+    }
+
+    HttpResponse::BadRequest().json("Malformed JSON sent.")
+}
+
 #[delete("/tickets")]
 async fn delete(req_body: String) -> impl Responder {
     let mut database = DataBase::new();
@@ -71,10 +103,14 @@ async fn delete(req_body: String) -> impl Responder {
     // todo: refactor once understood how to test with JSON extractors
     if let Ok(to_delete) = serde_json::from_str::<TicketToDelete>(&req_body) {
         return match delete_ticket(&mut database.connection, to_delete.id) {
-            Ok(sqlite_ticket) =>
-                HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
-            Err(_) => HttpResponse::NotFound()
-                .json(format!("No ticket with id {}", to_delete.id))
+            Ok(sqlite_ticket) => HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
+            Err(err) => match err {
+                Error::NotFound => {
+                    HttpResponse::NotFound().json(format!("No ticket with id {}", to_delete.id))
+                }
+                _ => HttpResponse::InternalServerError()
+                    .json(format!("Could not delete ticket with id {}", to_delete.id)),
+            },
         };
     }
 
@@ -97,8 +133,6 @@ mod tests {
         // serial is needed because sqlite does not support parallel write access -> run everything serially
         #[serial]
         async fn test_bad_request() {
-            setup_database();
-
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
                 .uri("/tickets")
@@ -116,14 +150,13 @@ mod tests {
         async fn test_create_ticket() {
             setup_database();
 
-            let ticket_payload = "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [] }";
+            let ticket_payload =
+                "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [] }";
 
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
                 .uri("/tickets")
-                .set_payload(
-                    ticket_payload
-                )
+                .set_payload(ticket_payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
@@ -197,8 +230,6 @@ mod tests {
         #[actix_web::test]
         #[serial]
         async fn test_bad_request() {
-            setup_database();
-
             let app = test::init_service(App::new().service(delete)).await;
             let req = TestRequest::delete()
                 .uri("/tickets")
@@ -209,6 +240,90 @@ mod tests {
 
             assert!(response.status().is_client_error());
             assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    mod edit_ticket {
+        use crate::database::setup_database;
+        use crate::edit;
+        use actix_web::test::TestRequest;
+        use actix_web::{test, App};
+        use serial_test::serial;
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_invalid_id() {
+            let app = test::init_service(App::new().service(edit)).await;
+            let req = TestRequest::post()
+                .uri("/tickets/invalid")
+                .set_payload("")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_negative_id() {
+            let app = test::init_service(App::new().service(edit)).await;
+            let req = TestRequest::delete()
+                .uri("/tickets/-1")
+                .set_payload("{}")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_bad_payload() {
+            let app = test::init_service(App::new().service(edit)).await;
+            let req = TestRequest::post()
+                .uri("/tickets/999")
+                .set_payload("{ \"body\": \"Test\", \"title\": \"Test\" }")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_not_found() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(edit)).await;
+            let req = TestRequest::post()
+                .uri("/tickets/3")
+                .set_payload("{}")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_updated() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(edit)).await;
+            let req = TestRequest::post()
+                .uri("/tickets/1")
+                .set_payload(
+                    "{ \"body\": \"Test\", \"title\": \"Test\", \"labels\": [\"Feature\"] }",
+                )
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_success());
         }
     }
 }

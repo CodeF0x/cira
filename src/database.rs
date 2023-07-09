@@ -1,6 +1,7 @@
 use crate::models::{Label, NewTicket, SqliteTicket};
+use crate::payloads::TicketPayload;
 use crate::schema::tickets::dsl::tickets;
-use crate::schema::tickets::id;
+use crate::schema::tickets::{body, id, labels, last_modified, title};
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
 use dotenvy::dotenv;
 use std::env;
@@ -31,9 +32,9 @@ impl DataBase {
 
 pub fn create_ticket(
     connection: &mut SqliteConnection,
-    title: String,
-    body: String,
-    labels: Vec<Label>,
+    new_title: String,
+    new_body: String,
+    new_labels: Vec<Label>,
 ) -> QueryResult<SqliteTicket> {
     use crate::schema::tickets;
 
@@ -41,11 +42,11 @@ pub fn create_ticket(
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::new(0, 0));
     let new_ticket = NewTicket {
-        title,
-        body,
+        title: new_title,
+        body: new_body,
         created: now_in_millis.as_millis().to_string(),
         last_modified: now_in_millis.as_millis().to_string(),
-        labels: serde_json::to_string(&labels).unwrap(),
+        labels: serde_json::to_string(&new_labels).unwrap(),
     };
 
     diesel::insert_into(tickets::table)
@@ -57,7 +58,10 @@ pub fn get_all_tickets(connection: &mut SqliteConnection) -> QueryResult<Vec<Sql
     tickets.load::<SqliteTicket>(connection)
 }
 
-pub fn delete_ticket(connection: &mut SqliteConnection, ticked_id: i32) -> QueryResult<SqliteTicket> {
+pub fn delete_ticket(
+    connection: &mut SqliteConnection,
+    ticked_id: i32,
+) -> QueryResult<SqliteTicket> {
     diesel::delete(tickets.filter(id.eq(ticked_id))).get_result(connection)
 }
 
@@ -87,4 +91,23 @@ pub fn setup_database() {
         .values(&test_ticket)
         .execute(&mut database.connection)
         .expect("Could not write test data into test database");
+}
+
+pub fn edit_ticket(
+    connection: &mut SqliteConnection,
+    ticket: TicketPayload,
+    ticket_id: i32,
+) -> QueryResult<SqliteTicket> {
+    let now_in_millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::new(0, 0));
+
+    diesel::update(tickets.filter(id.eq(ticket_id)))
+        .set((
+            title.eq(ticket.title),
+            body.eq(ticket.body),
+            labels.eq(serde_json::to_string(&ticket.labels).unwrap()),
+            last_modified.eq(now_in_millis.as_millis().to_string()),
+        ))
+        .get_result(connection)
 }

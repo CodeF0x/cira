@@ -14,8 +14,8 @@ Basically no functionality yet.
 ### Testing
 
 To not meddle with the development database, a test-database is recommended. 
-To set up / apply migrations to it, run: `diesel migration run --database-url <path to your database>`.
+To set up / apply migrations to it, run: `diesel migration run --database-url <path to your testing database>`.
 
-Also add the url in your `.env` file: `TEST_DATABASE_URL=<url>`. That way all database operations will be redirected to the test database.
+Also add the url in your `.env` file: `TEST_DATABASE_URL=<path to your testing database>`. That way all database operations will be redirected to the test database.
 
 > Note: If you use diesel migrations on two or more databases, you need to set the database url everytime, also for the development database
