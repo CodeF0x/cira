@@ -5,7 +5,7 @@ mod schema;
 
 use crate::database::{create_ticket, delete_ticket, edit_ticket, get_all_tickets, DataBase};
 use crate::models::Ticket;
-use crate::payloads::{TicketPayload, TicketToDelete};
+use crate::payloads::{TicketPayload};
 use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use diesel::result::Error;
 use std::io::Result;
@@ -96,25 +96,31 @@ async fn edit(req: HttpRequest, req_body: String) -> impl Responder {
     HttpResponse::BadRequest().json("Malformed JSON sent.")
 }
 
-#[delete("/tickets")]
-async fn delete(req_body: String) -> impl Responder {
-    let mut database = DataBase::new();
+#[delete("/tickets/{id}")]
+async fn delete(req: HttpRequest) -> impl Responder {
+    let ticket_id: i32 = req
+        .match_info()
+        .get("id")
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
 
-    // todo: refactor once understood how to test with JSON extractors
-    if let Ok(to_delete) = serde_json::from_str::<TicketToDelete>(&req_body) {
-        return match delete_ticket(&mut database.connection, to_delete.id) {
-            Ok(sqlite_ticket) => HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
-            Err(err) => match err {
-                Error::NotFound => {
-                    HttpResponse::NotFound().json(format!("No ticket with id {}", to_delete.id))
-                }
-                _ => HttpResponse::InternalServerError()
-                    .json(format!("Could not delete ticket with id {}", to_delete.id)),
-            },
-        };
+    if ticket_id < 1 {
+        return HttpResponse::BadRequest().json("ID must be an integer higher than 0");
     }
 
-    HttpResponse::BadRequest().json("Malformed JSON sent.")
+    let mut database = DataBase::new();
+
+    return match delete_ticket(&mut database.connection, ticket_id) {
+        Ok(sqlite_ticket) => HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
+        Err(err) => match err {
+            Error::NotFound => {
+                HttpResponse::NotFound().json(format!("No ticket with id {}", ticket_id))
+            }
+            _ => HttpResponse::InternalServerError()
+                .json(format!("Could not delete ticket with id {}", ticket_id)),
+        },
+    };
 }
 
 #[cfg(test)]
@@ -200,8 +206,7 @@ mod tests {
 
             let app = test::init_service(App::new().service(delete)).await;
             let req = TestRequest::delete()
-                .uri("/tickets")
-                .set_payload("{ \"id\": 1 }")
+                .uri("/tickets/1")
                 .to_request();
 
             let response = test::call_service(&app, req).await;
@@ -217,8 +222,7 @@ mod tests {
 
             let app = test::init_service(App::new().service(delete)).await;
             let req = TestRequest::delete()
-                .uri("/tickets")
-                .set_payload("{ \"id\": 999 }")
+                .uri("/tickets/999")
                 .to_request();
 
             let response = test::call_service(&app, req).await;
@@ -232,8 +236,7 @@ mod tests {
         async fn test_bad_request() {
             let app = test::init_service(App::new().service(delete)).await;
             let req = TestRequest::delete()
-                .uri("/tickets")
-                .set_payload("{}")
+                .uri("/tickets/-1")
                 .to_request();
 
             let response = test::call_service(&app, req).await;
