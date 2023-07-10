@@ -1,9 +1,7 @@
-name: Rust
+name: CI
 
 on:
   push:
-    branches: [ "**" ]
-  pull_request:
     branches: [ "**" ]
 
 env:
@@ -29,7 +27,5 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Setup fmt
-        run: rustup component add rustfmt
       - name: Check formatting
         run: cargo fmt --check
