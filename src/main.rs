@@ -5,7 +5,7 @@ mod schema;
 
 use crate::database::{create_ticket, delete_ticket, edit_ticket, get_all_tickets, DataBase};
 use crate::models::Ticket;
-use crate::payloads::{TicketPayload};
+use crate::payloads::TicketPayload;
 use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use diesel::result::Error;
 use std::io::Result;
@@ -205,9 +205,7 @@ mod tests {
             setup_database();
 
             let app = test::init_service(App::new().service(delete)).await;
-            let req = TestRequest::delete()
-                .uri("/tickets/1")
-                .to_request();
+            let req = TestRequest::delete().uri("/tickets/1").to_request();
 
             let response = test::call_service(&app, req).await;
 
@@ -221,9 +219,7 @@ mod tests {
             setup_database();
 
             let app = test::init_service(App::new().service(delete)).await;
-            let req = TestRequest::delete()
-                .uri("/tickets/999")
-                .to_request();
+            let req = TestRequest::delete().uri("/tickets/999").to_request();
 
             let response = test::call_service(&app, req).await;
 
@@ -233,11 +229,9 @@ mod tests {
 
         #[actix_web::test]
         #[serial]
-        async fn test_bad_request() {
+        async fn test_negative_id() {
             let app = test::init_service(App::new().service(delete)).await;
-            let req = TestRequest::delete()
-                .uri("/tickets/-1")
-                .to_request();
+            let req = TestRequest::delete().uri("/tickets/-1").to_request();
 
             let response = test::call_service(&app, req).await;
 
