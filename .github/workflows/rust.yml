@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v3
       - name: Setup fmt
         run: rustup component add rustfmt
       - name: Check formatting
