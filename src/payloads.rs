@@ -7,8 +7,3 @@ pub struct TicketPayload {
     pub body: String,
     pub labels: Vec<Label>,
 }
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TicketToDelete {
-    pub id: i32,
-}
