@@ -1,9 +1,14 @@
 mod database;
+mod errors;
 mod models;
 mod payloads;
 mod schema;
 
 use crate::database::{create_ticket, delete_ticket, edit_ticket, get_all_tickets, DataBase};
+use crate::errors::{
+    ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
+    ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
+};
 use crate::models::Ticket;
 use crate::payloads::TicketPayload;
 use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -37,12 +42,11 @@ async fn create(req_body: String) -> impl Responder {
             payload.labels,
         ) {
             Ok(ticket) => HttpResponse::Created().json(ticket.to_ticket()),
-            Err(err) => HttpResponse::InternalServerError()
-                .json(format!("Could not create ticket: {:?}", err)),
+            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE),
         };
     }
 
-    HttpResponse::BadRequest().json("Malformed JSON sent.")
+    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[get("/tickets")]
@@ -60,9 +64,7 @@ async fn get_tickets() -> impl Responder {
 
             return HttpResponse::Ok().json(tickets);
         }
-        Err(err) => {
-            HttpResponse::InternalServerError().json(format!("Could not get tickets: {:?}", err))
-        }
+        Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
     }
 }
 
@@ -76,7 +78,7 @@ async fn edit(req: HttpRequest, req_body: String) -> impl Responder {
         .unwrap_or(0);
 
     if ticket_id < 1 {
-        return HttpResponse::BadRequest().json("ID must be an integer higher than 0");
+        return HttpResponse::BadRequest().json(ERROR_INVALID_ID);
     }
 
     if let Ok(ticket_payload) = serde_json::from_str::<TicketPayload>(&req_body) {
@@ -85,15 +87,16 @@ async fn edit(req: HttpRequest, req_body: String) -> impl Responder {
         return match edit_ticket(&mut database.connection, ticket_payload, ticket_id) {
             Ok(updated_ticket) => HttpResponse::Ok().json(updated_ticket.to_ticket()),
             Err(err) => match err {
-                Error::NotFound => HttpResponse::NotFound()
-                    .json(format!("Could not find ticket with id {}", ticket_id)),
+                Error::NotFound => {
+                    HttpResponse::NotFound().json(format!("{} {}", ERROR_NOT_FOUND, ticket_id))
+                }
                 _ => HttpResponse::InternalServerError()
-                    .json(format!("Could not update ticket with id {}", ticket_id)),
+                    .json(format!("{} {}", ERROR_COULD_NOT_UPDATE, ticket_id)),
             },
         };
     }
 
-    HttpResponse::BadRequest().json("Malformed JSON sent.")
+    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[delete("/tickets/{id}")]
@@ -106,7 +109,7 @@ async fn delete(req: HttpRequest) -> impl Responder {
         .unwrap_or(0);
 
     if ticket_id < 1 {
-        return HttpResponse::BadRequest().json("ID must be an integer higher than 0");
+        return HttpResponse::BadRequest().json(ERROR_INVALID_ID);
     }
 
     let mut database = DataBase::new();
@@ -115,10 +118,10 @@ async fn delete(req: HttpRequest) -> impl Responder {
         Ok(sqlite_ticket) => HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
         Err(err) => match err {
             Error::NotFound => {
-                HttpResponse::NotFound().json(format!("No ticket with id {}", ticket_id))
+                HttpResponse::NotFound().json(format!("{} {}", ERROR_NOT_FOUND, ticket_id))
             }
             _ => HttpResponse::InternalServerError()
-                .json(format!("Could not delete ticket with id {}", ticket_id)),
+                .json(format!("{} {}", ERROR_COULD_NOT_DELETE, ticket_id)),
         },
     };
 }
