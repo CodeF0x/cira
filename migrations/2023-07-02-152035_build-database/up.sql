@@ -7,3 +7,10 @@ create table tickets (
     last_modified text not null,
     labels text not null
 );
+
+create table users (
+    id integer primary key not null,
+    display_name text not null,
+    email text not null,
+    password text not null
+);

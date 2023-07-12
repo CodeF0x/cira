@@ -1,7 +1,9 @@
-use crate::models::{Label, NewTicket, SqliteTicket};
+use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket};
 use crate::payloads::TicketPayload;
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, title};
+use crate::schema::users;
+use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
 use dotenvy::dotenv;
 use std::env;
@@ -109,5 +111,31 @@ pub fn edit_ticket(
             labels.eq(serde_json::to_string(&ticket.labels).unwrap()),
             last_modified.eq(now_in_millis.as_millis().to_string()),
         ))
+        .get_result(connection)
+}
+
+pub fn create_user(
+    connection: &mut SqliteConnection,
+    user_payload: NewUser,
+) -> QueryResult<DataBaseUser> {
+    dotenv().ok();
+
+    let hash_secret = env::var("HASH_SECRET").expect("HASH_SECRET not set!");
+    let mut hasher = Hasher::default();
+
+    let hash = hasher
+        .with_password(user_payload.password)
+        .with_secret_key(hash_secret)
+        .hash()
+        .unwrap();
+
+    let new_user = NewUser {
+        display_name: user_payload.display_name,
+        email: user_payload.email,
+        password: hash,
+    };
+
+    diesel::insert_into(users::table)
+        .values(new_user)
         .get_result(connection)
 }
