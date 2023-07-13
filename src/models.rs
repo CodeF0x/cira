@@ -57,3 +57,20 @@ impl SqliteTicket {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Queryable)]
+pub struct DataBaseUser {
+    pub id: i32,
+    pub display_name: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Serialize, Deserialize, Insertable)]
+#[diesel(table_name = crate::schema::users)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewUser {
+    pub display_name: String,
+    pub email: String,
+    pub password: String,
+}

@@ -4,12 +4,14 @@ mod models;
 mod payloads;
 mod schema;
 
-use crate::database::{create_ticket, delete_ticket, edit_ticket, get_all_tickets, DataBase};
+use crate::database::{
+    create_ticket, create_user, delete_ticket, edit_ticket, get_all_tickets, DataBase,
+};
 use crate::errors::{
     ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
     ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
 };
-use crate::models::Ticket;
+use crate::models::{NewUser, Ticket};
 use crate::payloads::TicketPayload;
 use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use diesel::result::Error;
@@ -23,6 +25,7 @@ async fn main() -> Result<()> {
             .service(get_tickets)
             .service(delete)
             .service(edit)
+            .service(sign_up)
     })
     .bind(("localhost", 8080))?
     .run()
@@ -126,6 +129,20 @@ async fn delete(req: HttpRequest) -> impl Responder {
     };
 }
 
+#[post("/users")]
+async fn sign_up(req_body: String) -> impl Responder {
+    if let Ok(user_payload) = serde_json::from_str::<NewUser>(&req_body) {
+        let mut database = DataBase::new();
+
+        return match create_user(&mut database.connection, user_payload) {
+            Ok(new_user) => HttpResponse::Created().json(new_user),
+            Err(_) => HttpResponse::InternalServerError().json("Could not create new user"),
+        };
+    }
+
+    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
+}
+
 #[cfg(test)]
 mod tests {
     use actix_web::test::TestRequest;
@@ -137,10 +154,10 @@ mod tests {
         use crate::create;
         use crate::database::setup_database;
         use actix_web::http::StatusCode;
+        use serial_test::parallel;
 
         #[actix_web::test]
-        // serial is needed because sqlite does not support parallel write access -> run everything serially
-        #[serial]
+        #[parallel]
         async fn test_bad_request() {
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
@@ -155,6 +172,7 @@ mod tests {
         }
 
         #[actix_web::test]
+        // serial is needed because sqlite does not support parallel write access -> run everything serially
         #[serial]
         async fn test_create_ticket() {
             setup_database();
@@ -201,6 +219,7 @@ mod tests {
         use crate::database::setup_database;
         use crate::delete;
         use actix_web::http::StatusCode;
+        use serial_test::parallel;
 
         #[actix_web::test]
         #[serial]
@@ -231,7 +250,7 @@ mod tests {
         }
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_negative_id() {
             let app = test::init_service(App::new().service(delete)).await;
             let req = TestRequest::delete().uri("/tickets/-1").to_request();
@@ -248,10 +267,10 @@ mod tests {
         use crate::edit;
         use actix_web::test::TestRequest;
         use actix_web::{test, App};
-        use serial_test::serial;
+        use serial_test::{parallel, serial};
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_invalid_id() {
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
@@ -265,7 +284,7 @@ mod tests {
         }
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_negative_id() {
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::delete()
@@ -279,7 +298,7 @@ mod tests {
         }
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_bad_payload() {
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
@@ -324,6 +343,57 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert!(response.status().is_success());
+        }
+    }
+
+    mod test_sign_up {
+        use super::*;
+        use crate::database::setup_database;
+        use crate::models::DataBaseUser;
+        use crate::sign_up;
+        use serial_test::parallel;
+
+        #[actix_web::test]
+        #[parallel]
+        async fn test_bad_request() {
+            let app = test::init_service(App::new().service(sign_up)).await;
+            let req = TestRequest::post()
+                .uri("/users")
+                .set_payload(
+                    "{ \"password\": \"123\", \"display_name\": \"User\", \"email\": 123 }",
+                )
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_sign_up() {
+            setup_database();
+
+            let email = "test@example.com";
+            let display_name = "User";
+            let password = "123";
+
+            let payload = format!(
+                "{{ \"password\": \"{}\", \"display_name\": \"{}\", \"email\": \"{}\" }}",
+                password, display_name, email
+            );
+
+            let app = test::init_service(App::new().service(sign_up)).await;
+            let req = TestRequest::post()
+                .uri("/users")
+                .set_payload(payload)
+                .to_request();
+
+            let response: DataBaseUser = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.email, email);
+            assert_ne!(response.password, password);
+            assert_eq!(response.display_name, display_name);
         }
     }
 }
