@@ -17,3 +17,6 @@ argonautica = "0.2.0"
 hmac = "0.12.1"
 jwt = "0.16.0"
 sha2 = "0.10.7"
+
+[dev-dependencies]
+run_script = "0.10.1"

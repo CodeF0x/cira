@@ -154,10 +154,10 @@ mod tests {
         use crate::create;
         use crate::database::setup_database;
         use actix_web::http::StatusCode;
+        use serial_test::parallel;
 
         #[actix_web::test]
-        // serial is needed because sqlite does not support parallel write access -> run everything serially
-        #[serial]
+        #[parallel]
         async fn test_bad_request() {
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
@@ -172,6 +172,7 @@ mod tests {
         }
 
         #[actix_web::test]
+        // serial is needed because sqlite does not support parallel write access -> run everything serially
         #[serial]
         async fn test_create_ticket() {
             setup_database();
@@ -218,6 +219,7 @@ mod tests {
         use crate::database::setup_database;
         use crate::delete;
         use actix_web::http::StatusCode;
+        use serial_test::parallel;
 
         #[actix_web::test]
         #[serial]
@@ -248,7 +250,7 @@ mod tests {
         }
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_negative_id() {
             let app = test::init_service(App::new().service(delete)).await;
             let req = TestRequest::delete().uri("/tickets/-1").to_request();
@@ -265,10 +267,10 @@ mod tests {
         use crate::edit;
         use actix_web::test::TestRequest;
         use actix_web::{test, App};
-        use serial_test::serial;
+        use serial_test::{parallel, serial};
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_invalid_id() {
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
@@ -282,7 +284,7 @@ mod tests {
         }
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_negative_id() {
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::delete()
@@ -296,7 +298,7 @@ mod tests {
         }
 
         #[actix_web::test]
-        #[serial]
+        #[parallel]
         async fn test_bad_payload() {
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
@@ -341,6 +343,57 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert!(response.status().is_success());
+        }
+    }
+
+    mod test_sign_up {
+        use super::*;
+        use crate::database::setup_database;
+        use crate::models::DataBaseUser;
+        use crate::sign_up;
+        use serial_test::parallel;
+
+        #[actix_web::test]
+        #[parallel]
+        async fn test_bad_request() {
+            let app = test::init_service(App::new().service(sign_up)).await;
+            let req = TestRequest::post()
+                .uri("/users")
+                .set_payload(
+                    "{ \"password\": \"123\", \"display_name\": \"User\", \"email\": 123 }",
+                )
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_sign_up() {
+            setup_database();
+
+            let email = "test@example.com";
+            let display_name = "User";
+            let password = "123";
+
+            let payload = format!(
+                "{{ \"password\": \"{}\", \"display_name\": \"{}\", \"email\": \"{}\" }}",
+                password, display_name, email
+            );
+
+            let app = test::init_service(App::new().service(sign_up)).await;
+            let req = TestRequest::post()
+                .uri("/users")
+                .set_payload(payload)
+                .to_request();
+
+            let response: DataBaseUser = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.email, email);
+            assert_ne!(response.password, password);
+            assert_eq!(response.display_name, display_name);
         }
     }
 }

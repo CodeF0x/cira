@@ -72,7 +72,14 @@ pub fn delete_ticket(
 **/
 #[cfg(test)]
 pub fn setup_database() {
+    dotenv().ok();
+    let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL not set in .env");
     let mut database = DataBase::new();
+    run_script::run_script!(format!(
+        "diesel migration redo --database-url {}",
+        database_url
+    ))
+    .unwrap();
 
     let test_ticket = NewTicket {
         title: "Test Title".to_string(),
@@ -82,17 +89,20 @@ pub fn setup_database() {
         last_modified: "1688587842815".to_string(),
         labels: "[]".to_string(),
     };
+    let test_user = NewUser {
+        display_name: "user".to_string(),
+        email: "test@example.com".to_string(),
+        password: "asdg7asd8g7".to_string(),
+    };
 
-    diesel::sql_query("drop table tickets")
-        .execute(&mut database.connection)
-        .expect("Could not drop table tickets in test database");
-    diesel::sql_query("create table tickets (id integer primary key not null, title varchar not null, body text not null, created text not null, last_modified text not null, labels text not null);")
-        .execute(&mut database.connection)
-        .expect("Could not re-create table in test database");
     diesel::insert_into(tickets)
         .values(&test_ticket)
         .execute(&mut database.connection)
         .expect("Could not write test data into test database");
+    diesel::insert_into(users::table)
+        .values(test_user)
+        .execute(&mut database.connection)
+        .expect("Could not write test user into test database");
 }
 
 pub fn edit_ticket(
@@ -129,6 +139,9 @@ pub fn create_user(
         .hash()
         .unwrap();
 
+    // be careful with order of properties.
+    // values are written to database in the order they are in the struct
+    // keep in mind to not "assign" e. g. password to email
     let new_user = NewUser {
         display_name: user_payload.display_name,
         email: user_payload.email,
