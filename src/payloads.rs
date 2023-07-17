@@ -6,4 +6,5 @@ pub struct TicketPayload {
     pub title: String,
     pub body: String,
     pub labels: Vec<Label>,
+    pub assigned_user: Option<i32>,
 }
