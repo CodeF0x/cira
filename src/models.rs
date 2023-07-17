@@ -12,6 +12,7 @@ pub struct SqliteTicket {
     pub created: String,
     pub last_modified: String,
     pub labels: String,
+    pub assigned_user: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -22,6 +23,7 @@ pub struct Ticket {
     pub created: String,
     pub last_modified: String,
     pub labels: Vec<Label>,
+    pub assigned_user: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -34,7 +36,7 @@ pub enum Label {
     Open,
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Debug)]
 #[diesel(table_name = crate::schema::tickets)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewTicket {
@@ -43,6 +45,7 @@ pub struct NewTicket {
     pub created: String,
     pub last_modified: String,
     pub labels: String,
+    pub assigned_user: Option<i32>,
 }
 
 impl SqliteTicket {
@@ -54,6 +57,7 @@ impl SqliteTicket {
             created: self.created.clone(),
             last_modified: self.last_modified.clone(),
             labels: serde_json::from_str(&self.labels).unwrap(),
+            assigned_user: self.assigned_user,
         }
     }
 }

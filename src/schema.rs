@@ -8,6 +8,7 @@ diesel::table! {
         created -> Text,
         last_modified -> Text,
         labels -> Text,
+        assigned_user -> Nullable<Integer>,
     }
 }
 

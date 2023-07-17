@@ -37,6 +37,7 @@ pub fn create_ticket(
     new_title: String,
     new_body: String,
     new_labels: Vec<Label>,
+    new_user: Option<i32>,
 ) -> QueryResult<SqliteTicket> {
     use crate::schema::tickets;
 
@@ -49,6 +50,7 @@ pub fn create_ticket(
         created: now_in_millis.as_millis().to_string(),
         last_modified: now_in_millis.as_millis().to_string(),
         labels: serde_json::to_string(&new_labels).unwrap(),
+        assigned_user: new_user,
     };
 
     diesel::insert_into(tickets::table)
@@ -88,6 +90,7 @@ pub fn setup_database() {
         created: "1688587842815".to_string(),
         last_modified: "1688587842815".to_string(),
         labels: "[]".to_string(),
+        assigned_user: None,
     };
     let test_user = NewUser {
         display_name: "user".to_string(),

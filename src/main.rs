@@ -43,6 +43,7 @@ async fn create(req_body: String) -> impl Responder {
             payload.title,
             payload.body,
             payload.labels,
+            payload.assigned_user,
         ) {
             Ok(ticket) => HttpResponse::Created().json(ticket.to_ticket()),
             Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE),
@@ -178,7 +179,7 @@ mod tests {
             setup_database();
 
             let ticket_payload =
-                "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [] }";
+                "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [\"Bug\"], \"assigned_user\": 1 }";
 
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
