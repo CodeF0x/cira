@@ -1,5 +1,5 @@
-use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket};
-use crate::payloads::TicketPayload;
+use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket, Ticket};
+use crate::payloads::{FilterPayload, TicketPayload};
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, title};
 use crate::schema::users;
@@ -154,4 +154,63 @@ pub fn create_user(
     diesel::insert_into(users::table)
         .values(new_user)
         .get_result(connection)
+}
+
+pub fn filter_tickets_in_database(
+    connection: &mut SqliteConnection,
+    filter_payload: FilterPayload,
+) -> Vec<Ticket> {
+    /*
+     * It's probably a horrible idea to fetch all data from the database an then map and filter through each and every entry,
+     * but SQLite does not support arrays, so we would have to use LIKE for the labels which would be almost equally as slow.
+     * Plus it would lead to horrible string interpolation with the %-pattern.
+     *
+     * An alternative would of course be FTS, but I couldn't get it to work with diesel. From my understanding,
+     * diesel needs us to specify a primary key, but FTS does that automatically and doesn't want us to do it ourselves.
+     */
+    let all_tickets = tickets.load::<SqliteTicket>(connection).unwrap_or(vec![]);
+    let parsed_tickets: Vec<Ticket> = all_tickets
+        .iter()
+        .map(|sqlite_ticket| sqlite_ticket.to_ticket())
+        .collect();
+
+    parsed_tickets
+        .iter()
+        .filter(|t| {
+            filter_by_title(&filter_payload.title, t)
+                && filter_by_assigned_user(filter_payload.assigned_user, t)
+                && filter_by_labels(&filter_payload.labels, t)
+        })
+        .cloned()
+        .collect::<Vec<_>>()
+}
+
+// function that takes in an option. if okay, filter by value. if none, simply return true
+fn filter_by_assigned_user(user_id: Option<i32>, ticket: &Ticket) -> bool {
+    match user_id {
+        Some(user_id) => ticket.assigned_user.unwrap_or(0) == user_id,
+        None => true,
+    }
+}
+
+fn filter_by_title(ticket_title: &Option<String>, ticket: &Ticket) -> bool {
+    match ticket_title {
+        Some(ticket_title) => ticket_title.contains(&ticket.title),
+        None => true,
+    }
+}
+
+fn filter_by_labels(ticket_labels: &Option<Vec<Label>>, ticket: &Ticket) -> bool {
+    match ticket_labels {
+        Some(ticket_labels) => {
+            let mut includes = false;
+
+            for lbl in ticket_labels.iter() {
+                includes = ticket.labels.contains(lbl);
+            }
+
+            includes
+        }
+        None => true,
+    }
 }

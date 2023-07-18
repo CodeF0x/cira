@@ -1,5 +1,5 @@
 use diesel::prelude::*;
-use diesel::Queryable;
+use diesel::{FromSqlRow, Queryable};
 use serde::{Deserialize, Serialize};
 
 #[derive(Queryable, Deserialize, Serialize, Debug)]
@@ -15,7 +15,7 @@ pub struct SqliteTicket {
     pub assigned_user: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, FromSqlRow, Clone)]
 pub struct Ticket {
     pub id: i32,
     pub title: String,
@@ -26,7 +26,7 @@ pub struct Ticket {
     pub assigned_user: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum Label {
     Feature,
     Bug,

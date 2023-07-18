@@ -5,14 +5,15 @@ mod payloads;
 mod schema;
 
 use crate::database::{
-    create_ticket, create_user, delete_ticket, edit_ticket, get_all_tickets, DataBase,
+    create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
+    get_all_tickets, DataBase,
 };
 use crate::errors::{
     ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
     ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
 };
 use crate::models::{NewUser, Ticket};
-use crate::payloads::TicketPayload;
+use crate::payloads::{FilterPayload, TicketPayload};
 use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use diesel::result::Error;
 use std::io::Result;
@@ -26,6 +27,7 @@ async fn main() -> Result<()> {
             .service(delete)
             .service(edit)
             .service(sign_up)
+            .service(filter_tickets)
     })
     .bind(("localhost", 8080))?
     .run()
@@ -66,10 +68,22 @@ async fn get_tickets() -> impl Responder {
                 .map(|sqlite_ticket| sqlite_ticket.to_ticket())
                 .collect();
 
-            return HttpResponse::Ok().json(tickets);
+            HttpResponse::Ok().json(tickets)
         }
         Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
     }
+}
+
+#[post("/filter")]
+async fn filter_tickets(req_body: String) -> impl Responder {
+    if let Ok(filter) = serde_json::from_str::<FilterPayload>(&req_body) {
+        let mut database = DataBase::new();
+
+        return HttpResponse::Ok()
+            .json(filter_tickets_in_database(&mut database.connection, filter));
+    }
+
+    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[post("/tickets/{id}")]
@@ -118,7 +132,7 @@ async fn delete(req: HttpRequest) -> impl Responder {
 
     let mut database = DataBase::new();
 
-    return match delete_ticket(&mut database.connection, ticket_id) {
+    match delete_ticket(&mut database.connection, ticket_id) {
         Ok(sqlite_ticket) => HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
         Err(err) => match err {
             Error::NotFound => {
@@ -127,7 +141,7 @@ async fn delete(req: HttpRequest) -> impl Responder {
             _ => HttpResponse::InternalServerError()
                 .json(format!("{} {}", ERROR_COULD_NOT_DELETE, ticket_id)),
         },
-    };
+    }
 }
 
 #[post("/users")]
