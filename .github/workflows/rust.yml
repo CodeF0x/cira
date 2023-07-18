@@ -20,6 +20,8 @@ jobs:
       run: diesel migration run --database-url test-backend.sqlite
     - name: Build
       run: cargo build
+    - name: Test
+      run: cargo test
 
   lint:
 
