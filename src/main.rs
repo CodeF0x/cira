@@ -1,8 +1,10 @@
 mod database;
 mod errors;
+mod filters;
 mod models;
 mod payloads;
 mod schema;
+mod test_helpers;
 
 use crate::database::{
     create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
@@ -79,9 +81,10 @@ async fn filter_tickets(req_body: String) -> impl Responder {
     if let Ok(filter) = serde_json::from_str::<FilterPayload>(&req_body) {
         let mut database = DataBase::new();
 
-        let tickets = filter_tickets_in_database(&mut database.connection, filter);
-
-        return HttpResponse::Ok().json(tickets);
+        return match filter_tickets_in_database(&mut database.connection, filter) {
+            Ok(tickets) => HttpResponse::Ok().json(tickets),
+            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
+        };
     }
 
     HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
@@ -165,6 +168,7 @@ async fn sign_up(req_body: String) -> impl Responder {
  */
 #[cfg(test)]
 mod tests {
+    use crate::test_helpers::test_helpers::{reset_database, setup_database};
     use actix_web::test::TestRequest;
     use actix_web::{test, App};
     use serial_test::serial;
@@ -172,7 +176,6 @@ mod tests {
     mod create_ticket {
         use super::*;
         use crate::create;
-        use crate::database::setup_database;
         use actix_web::http::StatusCode;
         use serial_test::parallel;
 
@@ -215,7 +218,6 @@ mod tests {
 
     mod get_tickets {
         use super::*;
-        use crate::database::{reset_database, setup_database};
         use crate::get_tickets;
         use crate::models::Ticket;
         use actix_web::test;
@@ -249,7 +251,6 @@ mod tests {
 
     mod delete_ticket {
         use super::*;
-        use crate::database::setup_database;
         use crate::delete;
         use actix_web::http::StatusCode;
         use serial_test::parallel;
@@ -296,7 +297,7 @@ mod tests {
     }
 
     mod edit_ticket {
-        use crate::database::setup_database;
+        use super::*;
         use crate::edit;
         use actix_web::test::TestRequest;
         use actix_web::{test, App};
@@ -381,7 +382,6 @@ mod tests {
 
     mod test_sign_up {
         use super::*;
-        use crate::database::setup_database;
         use crate::models::DataBaseUser;
         use crate::sign_up;
         use serial_test::parallel;
@@ -432,7 +432,6 @@ mod tests {
 
     mod test_filter {
         use super::*;
-        use crate::database::setup_database;
         use crate::filter_tickets;
         use crate::models::Ticket;
         use serial_test::parallel;
