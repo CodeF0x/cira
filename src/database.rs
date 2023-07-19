@@ -74,14 +74,8 @@ pub fn delete_ticket(
 **/
 #[cfg(test)]
 pub fn setup_database() {
-    dotenv().ok();
-    let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL not set in .env");
+    reset_database();
     let mut database = DataBase::new();
-    run_script::run_script!(format!(
-        "diesel migration redo --database-url {}",
-        database_url
-    ))
-    .unwrap();
 
     let test_ticket = NewTicket {
         title: "Test Title".to_string(),
@@ -89,8 +83,8 @@ pub fn setup_database() {
         // moment as of writing this
         created: "1688587842815".to_string(),
         last_modified: "1688587842815".to_string(),
-        labels: "[]".to_string(),
-        assigned_user: None,
+        labels: "[\"Bug\", \"InProgress\"]".to_string(),
+        assigned_user: Some(1),
     };
     let test_user = NewUser {
         display_name: "user".to_string(),
@@ -106,6 +100,17 @@ pub fn setup_database() {
         .values(test_user)
         .execute(&mut database.connection)
         .expect("Could not write test user into test database");
+}
+
+#[cfg(test)]
+pub fn reset_database() {
+    dotenv().ok();
+    let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL not set in .env");
+    run_script::run_script!(format!(
+        "diesel migration redo --database-url {}",
+        database_url
+    ))
+    .unwrap();
 }
 
 pub fn edit_ticket(
@@ -195,7 +200,7 @@ fn filter_by_assigned_user(user_id: Option<i32>, ticket: &Ticket) -> bool {
 
 fn filter_by_title(ticket_title: &Option<String>, ticket: &Ticket) -> bool {
     match ticket_title {
-        Some(ticket_title) => ticket_title.contains(&ticket.title),
+        Some(ticket_title) => ticket.title.contains(ticket_title),
         None => true,
     }
 }
