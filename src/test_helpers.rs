@@ -1,5 +1,5 @@
 #[cfg(test)]
-pub mod test_helpers {
+pub mod helpers {
     use crate::database::DataBase;
     use crate::models::{NewTicket, NewUser};
     use crate::schema::tickets::dsl::tickets;

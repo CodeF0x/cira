@@ -16,15 +16,7 @@ pub fn filter_by_title(ticket_title: &Option<String>, ticket: &Ticket) -> bool {
 
 pub fn filter_by_labels(ticket_labels: &Option<Vec<Label>>, ticket: &Ticket) -> bool {
     match ticket_labels {
-        Some(ticket_labels) => {
-            let mut includes = false;
-
-            for lbl in ticket_labels.iter() {
-                includes = ticket.labels.contains(lbl);
-            }
-
-            includes
-        }
+        Some(ticket_labels) => ticket_labels.iter().all(|l| ticket.labels.contains(l)),
         None => true,
     }
 }

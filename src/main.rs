@@ -164,11 +164,11 @@ async fn sign_up(req_body: String) -> impl Responder {
 
 /*
 * To fully understand the tests and the test data,
-* have a look at the setup_database function in database.rs.
+* have a look at the setup_database function in test_helpers.rs.
  */
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::test_helpers::{reset_database, setup_database};
+    use crate::test_helpers::helpers::{reset_database, setup_database};
     use actix_web::test::TestRequest;
     use actix_web::{test, App};
     use serial_test::serial;
