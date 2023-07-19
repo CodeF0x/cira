@@ -1,18 +1,21 @@
 mod database;
 mod errors;
+mod filters;
 mod models;
 mod payloads;
 mod schema;
+mod test_helpers;
 
 use crate::database::{
-    create_ticket, create_user, delete_ticket, edit_ticket, get_all_tickets, DataBase,
+    create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
+    get_all_tickets, DataBase,
 };
 use crate::errors::{
     ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
     ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
 };
 use crate::models::{NewUser, Ticket};
-use crate::payloads::TicketPayload;
+use crate::payloads::{FilterPayload, TicketPayload};
 use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use diesel::result::Error;
 use std::io::Result;
@@ -26,6 +29,7 @@ async fn main() -> Result<()> {
             .service(delete)
             .service(edit)
             .service(sign_up)
+            .service(filter_tickets)
     })
     .bind(("localhost", 8080))?
     .run()
@@ -66,10 +70,24 @@ async fn get_tickets() -> impl Responder {
                 .map(|sqlite_ticket| sqlite_ticket.to_ticket())
                 .collect();
 
-            return HttpResponse::Ok().json(tickets);
+            HttpResponse::Ok().json(tickets)
         }
         Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
     }
+}
+
+#[post("/filter")]
+async fn filter_tickets(req_body: String) -> impl Responder {
+    if let Ok(filter) = serde_json::from_str::<FilterPayload>(&req_body) {
+        let mut database = DataBase::new();
+
+        return match filter_tickets_in_database(&mut database.connection, filter) {
+            Ok(tickets) => HttpResponse::Ok().json(tickets),
+            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
+        };
+    }
+
+    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[post("/tickets/{id}")]
@@ -118,7 +136,7 @@ async fn delete(req: HttpRequest) -> impl Responder {
 
     let mut database = DataBase::new();
 
-    return match delete_ticket(&mut database.connection, ticket_id) {
+    match delete_ticket(&mut database.connection, ticket_id) {
         Ok(sqlite_ticket) => HttpResponse::Ok().json(sqlite_ticket.to_ticket()),
         Err(err) => match err {
             Error::NotFound => {
@@ -127,7 +145,7 @@ async fn delete(req: HttpRequest) -> impl Responder {
             _ => HttpResponse::InternalServerError()
                 .json(format!("{} {}", ERROR_COULD_NOT_DELETE, ticket_id)),
         },
-    };
+    }
 }
 
 #[post("/users")]
@@ -144,8 +162,13 @@ async fn sign_up(req_body: String) -> impl Responder {
     HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
+/*
+* To fully understand the tests and the test data,
+* have a look at the setup_database function in test_helpers.rs.
+ */
 #[cfg(test)]
 mod tests {
+    use crate::test_helpers::helpers::{reset_database, setup_database};
     use actix_web::test::TestRequest;
     use actix_web::{test, App};
     use serial_test::serial;
@@ -153,7 +176,6 @@ mod tests {
     mod create_ticket {
         use super::*;
         use crate::create;
-        use crate::database::setup_database;
         use actix_web::http::StatusCode;
         use serial_test::parallel;
 
@@ -196,7 +218,6 @@ mod tests {
 
     mod get_tickets {
         use super::*;
-        use crate::database::setup_database;
         use crate::get_tickets;
         use crate::models::Ticket;
         use actix_web::test;
@@ -211,13 +232,25 @@ mod tests {
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
 
-            assert!(response.len() > 0);
+            assert!(!response.is_empty());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_get_tickets_none() {
+            reset_database();
+
+            let app = test::init_service(App::new().service(get_tickets)).await;
+            let req = TestRequest::get().uri("/tickets").to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert!(response.is_empty());
         }
     }
 
     mod delete_ticket {
         use super::*;
-        use crate::database::setup_database;
         use crate::delete;
         use actix_web::http::StatusCode;
         use serial_test::parallel;
@@ -264,7 +297,7 @@ mod tests {
     }
 
     mod edit_ticket {
-        use crate::database::setup_database;
+        use super::*;
         use crate::edit;
         use actix_web::test::TestRequest;
         use actix_web::{test, App};
@@ -349,7 +382,6 @@ mod tests {
 
     mod test_sign_up {
         use super::*;
-        use crate::database::setup_database;
         use crate::models::DataBaseUser;
         use crate::sign_up;
         use serial_test::parallel;
@@ -395,6 +427,107 @@ mod tests {
             assert_eq!(response.email, email);
             assert_ne!(response.password, password);
             assert_eq!(response.display_name, display_name);
+        }
+    }
+
+    mod test_filter {
+        use super::*;
+        use crate::filter_tickets;
+        use crate::models::Ticket;
+        use serial_test::parallel;
+
+        #[actix_web::test]
+        #[parallel]
+        async fn test_bad_request() {
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{ \"labels\": null, }") // mind the trailing comma
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert!(response.status().is_client_error());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_filter_by_labels() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{ \"labels\": [\"InProgress\", \"Bug\"] }")
+                .to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.len(), 1);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_filter_by_assigned_user() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{ \"assigned_user\": 1 }")
+                .to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.len(), 1);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_filter_by_title() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{ \"title\": \"Test\" }")
+                .to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.len(), 1);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_return_all_when_filter_is_empty() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{}")
+                .to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.len(), 1);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_return_nothing_if_nothing_matches() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{ \"assigned_user\": 999 }")
+                .to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.len(), 0);
         }
     }
 }

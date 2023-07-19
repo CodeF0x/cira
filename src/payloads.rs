@@ -8,3 +8,10 @@ pub struct TicketPayload {
     pub labels: Vec<Label>,
     pub assigned_user: Option<i32>,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct FilterPayload {
+    pub labels: Option<Vec<Label>>,
+    pub assigned_user: Option<i32>,
+    pub title: Option<String>,
+}
