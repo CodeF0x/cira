@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod helpers {
     use crate::database::DataBase;
-    use crate::models::{NewTicket, NewUser};
+    use crate::models::{NewTicket, NewUser, Status};
     use crate::schema::tickets::dsl::tickets;
     use crate::schema::users;
     use diesel::RunQueryDsl;
@@ -23,6 +23,7 @@ pub mod helpers {
             last_modified: "1688587842815".to_string(),
             labels: "[\"Bug\", \"InProgress\"]".to_string(),
             assigned_user: Some(1),
+            status: Status::Open.to_string(),
         };
         let test_user = NewUser {
             display_name: "user".to_string(),
