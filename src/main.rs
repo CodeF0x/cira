@@ -201,7 +201,7 @@ mod tests {
             setup_database();
 
             let ticket_payload =
-                "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [\"Bug\"], \"assigned_user\": 1 }";
+                "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [\"Bug\"], \"assigned_user\": 1, \"status\": \"Open\" }";
 
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
@@ -370,7 +370,7 @@ mod tests {
             let req = TestRequest::post()
                 .uri("/tickets/1")
                 .set_payload(
-                    "{ \"body\": \"Test\", \"title\": \"Test\", \"labels\": [\"Feature\"] }",
+                    "{ \"body\": \"Test\", \"title\": \"Test\", \"labels\": [\"Feature\"], \"status\": \"Open\" }",
                 )
                 .to_request();
 
@@ -491,6 +491,22 @@ mod tests {
             let req = TestRequest::post()
                 .uri("/filter")
                 .set_payload("{ \"title\": \"Test\" }")
+                .to_request();
+
+            let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.len(), 1);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_filter_by_status() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(filter_tickets)).await;
+            let req = TestRequest::post()
+                .uri("/filter")
+                .set_payload("{ \"status\": \"Open\" }")
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;

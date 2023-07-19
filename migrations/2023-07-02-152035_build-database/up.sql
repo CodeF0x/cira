@@ -6,7 +6,8 @@ create table tickets (
     created text not null,
     last_modified text not null,
     labels text not null,
-    assigned_user integer
+    assigned_user integer,
+    status text not null
 );
 
 create table users (

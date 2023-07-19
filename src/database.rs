@@ -1,8 +1,10 @@
-use crate::filters::{filter_by_assigned_user, filter_by_labels, filter_by_title};
-use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket, Ticket};
+use crate::filters::{
+    filter_by_assigned_user, filter_by_labels, filter_by_status, filter_by_title,
+};
+use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket, Status, Ticket};
 use crate::payloads::{FilterPayload, TicketPayload};
 use crate::schema::tickets::dsl::tickets;
-use crate::schema::tickets::{body, id, labels, last_modified, title};
+use crate::schema::tickets::{body, id, labels, last_modified, status, title};
 use crate::schema::users;
 use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
@@ -52,6 +54,10 @@ pub fn create_ticket(
         last_modified: now_in_millis.as_millis().to_string(),
         labels: serde_json::to_string(&new_labels).unwrap(),
         assigned_user: new_user,
+        // status is required to be sent by user to not have ugly null handling in update function,
+        // so even if user sends "Closed", set it to open.
+        // Makes not sense to create a closed ticket.
+        status: Status::Open.to_string(),
     };
 
     diesel::insert_into(tickets::table)
@@ -85,6 +91,7 @@ pub fn edit_ticket(
             body.eq(ticket.body),
             labels.eq(serde_json::to_string(&ticket.labels).unwrap()),
             last_modified.eq(now_in_millis.as_millis().to_string()),
+            status.eq(ticket.status.to_string()),
         ))
         .get_result(connection)
 }
@@ -143,6 +150,7 @@ pub fn filter_tickets_in_database(
                     filter_by_title(&filter_payload.title, t)
                         && filter_by_assigned_user(filter_payload.assigned_user, t)
                         && filter_by_labels(&filter_payload.labels, t)
+                        && filter_by_status(filter_payload.status, t)
                 })
                 .cloned()
                 .collect::<Vec<_>>())

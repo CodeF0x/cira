@@ -1,6 +1,5 @@
 // @generated automatically by Diesel CLI.
 
-#[rustfmt::skip]
 diesel::table! {
     tickets (id) {
         id -> Integer,
@@ -10,10 +9,10 @@ diesel::table! {
         last_modified -> Text,
         labels -> Text,
         assigned_user -> Nullable<Integer>,
+        status -> Text,
     }
 }
 
-#[rustfmt::skip]
 diesel::table! {
     users (id) {
         id -> Integer,
@@ -23,5 +22,4 @@ diesel::table! {
     }
 }
 
-#[rustfmt::skip]
 diesel::allow_tables_to_appear_in_same_query!(tickets, users,);

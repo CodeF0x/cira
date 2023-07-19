@@ -1,4 +1,4 @@
-use crate::models::{Label, Ticket};
+use crate::models::{Label, Status, Ticket};
 
 pub fn filter_by_assigned_user(user_id: Option<i32>, ticket: &Ticket) -> bool {
     match user_id {
@@ -17,6 +17,13 @@ pub fn filter_by_title(ticket_title: &Option<String>, ticket: &Ticket) -> bool {
 pub fn filter_by_labels(ticket_labels: &Option<Vec<Label>>, ticket: &Ticket) -> bool {
     match ticket_labels {
         Some(ticket_labels) => ticket_labels.iter().all(|l| ticket.labels.contains(l)),
+        None => true,
+    }
+}
+
+pub fn filter_by_status(ticket_status: Option<Status>, ticket: &Ticket) -> bool {
+    match ticket_status {
+        Some(ticket_status) => ticket_status == ticket.status,
         None => true,
     }
 }
