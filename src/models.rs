@@ -109,3 +109,8 @@ pub struct NewUser {
     pub email: String,
     pub password: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct TokenClaims {
+    pub id: i32,
+}

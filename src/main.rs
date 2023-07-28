@@ -1,6 +1,7 @@
 mod database;
 mod errors;
 mod filters;
+mod middleware;
 mod models;
 mod payloads;
 mod schema;
@@ -8,28 +9,38 @@ mod test_helpers;
 
 use crate::database::{
     create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
-    get_all_tickets, DataBase,
+    get_all_tickets, get_user_by_email, DataBase,
 };
 use crate::errors::{
     ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
     ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
 };
-use crate::models::{NewUser, Ticket};
-use crate::payloads::{FilterPayload, TicketPayload};
-use actix_web::{delete, get, post, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use crate::middleware::validator;
+use crate::models::{NewUser, Ticket, TokenClaims};
+use crate::payloads::{FilterPayload, LoginPayload, TicketPayload};
+use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web_httpauth::middleware::HttpAuthentication;
+use argonautica::Verifier;
 use diesel::result::Error;
+use hmac::digest::KeyInit;
+use hmac::Hmac;
+use jwt::SignWithKey;
+use sha2::Sha256;
 use std::io::Result;
 
 #[actix_web::main]
 async fn main() -> Result<()> {
     HttpServer::new(|| {
-        App::new()
-            .service(create)
-            .service(get_tickets)
-            .service(delete)
-            .service(edit)
-            .service(sign_up)
-            .service(filter_tickets)
+        let bearer_middleware = HttpAuthentication::bearer(validator);
+        App::new().service(sign_up).service(login).service(
+            web::scope("")
+                .wrap(bearer_middleware)
+                .service(create)
+                .service(get_tickets)
+                .service(delete)
+                .service(edit)
+                .service(filter_tickets),
+        )
     })
     .bind(("localhost", 8080))?
     .run()
@@ -148,7 +159,7 @@ async fn delete(req: HttpRequest) -> impl Responder {
     }
 }
 
-#[post("/users")]
+#[post("/sign_up")]
 async fn sign_up(req_body: String) -> impl Responder {
     if let Ok(user_payload) = serde_json::from_str::<NewUser>(&req_body) {
         let mut database = DataBase::new();
@@ -160,6 +171,50 @@ async fn sign_up(req_body: String) -> impl Responder {
     }
 
     HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
+}
+
+#[post("/login")]
+async fn login(req_body: String) -> impl Responder {
+    if let Ok(login_payload) = serde_json::from_str::<LoginPayload>(&req_body) {
+        let mut database = DataBase::new();
+        let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(
+            std::env::var("JWT_SECRET")
+                .expect("JWT_SECRET must be set!")
+                .as_bytes(),
+        )
+        .unwrap();
+
+        return match get_user_by_email(login_payload.email, &mut database.connection) {
+            Ok(database_user) => {
+                let hash_secret = std::env::var("HASH_SECRET").expect("HASH_SECRET must be set!");
+                let mut verifier = Verifier::default();
+                let is_valid = verifier
+                    .with_hash(database_user.password)
+                    .with_password(login_payload.password)
+                    .with_secret_key(hash_secret)
+                    .verify()
+                    .unwrap();
+
+                if is_valid {
+                    let claims = TokenClaims {
+                        id: database_user.id,
+                    };
+                    let token_str = claims.sign_with_key(&jwt_secret).unwrap();
+                    HttpResponse::Ok().json(token_str)
+                } else {
+                    HttpResponse::Unauthorized().json("Incorrect username or password")
+                }
+            }
+            Err(err) => {
+                return match err {
+                    Error::NotFound => HttpResponse::NotFound().json("No user found"),
+                    _ => HttpResponse::InternalServerError().json("Could not get user"),
+                }
+            }
+        };
+    }
+
+    HttpResponse::BadRequest().json("Malformed JSON sent")
 }
 
 /*
@@ -391,7 +446,7 @@ mod tests {
         async fn test_bad_request() {
             let app = test::init_service(App::new().service(sign_up)).await;
             let req = TestRequest::post()
-                .uri("/users")
+                .uri("/sign_up")
                 .set_payload(
                     "{ \"password\": \"123\", \"display_name\": \"User\", \"email\": 123 }",
                 )
@@ -418,7 +473,7 @@ mod tests {
 
             let app = test::init_service(App::new().service(sign_up)).await;
             let req = TestRequest::post()
-                .uri("/users")
+                .uri("/sign_up")
                 .set_payload(payload)
                 .to_request();
 

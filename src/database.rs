@@ -5,7 +5,8 @@ use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket, Statu
 use crate::payloads::{FilterPayload, TicketPayload};
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, status, title};
-use crate::schema::users;
+use crate::schema::users::dsl::users;
+use crate::schema::users::email;
 use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
 use dotenvy::dotenv;
@@ -120,9 +121,16 @@ pub fn create_user(
         password: hash,
     };
 
-    diesel::insert_into(users::table)
+    diesel::insert_into(users)
         .values(new_user)
         .get_result(connection)
+}
+
+pub fn get_user_by_email(
+    user_email: String,
+    connection: &mut SqliteConnection,
+) -> QueryResult<DataBaseUser> {
+    users.filter(email.eq(user_email)).get_result(connection)
 }
 
 pub fn filter_tickets_in_database(

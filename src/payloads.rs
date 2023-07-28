@@ -17,3 +17,9 @@ pub struct FilterPayload {
     pub title: Option<String>,
     pub status: Option<Status>,
 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LoginPayload {
+    pub email: String,
+    pub password: String,
+}
