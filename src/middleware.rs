@@ -1,3 +1,4 @@
+use crate::database::{session_in_db, DataBase};
 use crate::models::TokenClaims;
 use actix_web::dev::ServiceRequest;
 use actix_web::{Error, HttpMessage};
@@ -15,6 +16,17 @@ pub async fn validator(
     let jwt_secret: String = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set!");
     let key: Hmac<Sha256> = Hmac::new_from_slice(jwt_secret.as_bytes()).unwrap();
     let token_string = credentials.token();
+    let mut database = DataBase::new();
+
+    if !session_in_db(token_string.to_string(), &mut database.connection) {
+        let config = req
+            .app_data::<bearer::Config>()
+            .cloned()
+            .unwrap_or_default()
+            .scope("");
+
+        return Err((AuthenticationError::from(config).into(), req));
+    }
 
     let claims: Result<TokenClaims, &str> = token_string
         .verify_with_key(&key)

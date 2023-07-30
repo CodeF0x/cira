@@ -1,6 +1,13 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    sessions (id) {
+        id -> Integer,
+        token -> Text,
+    }
+}
+
+diesel::table! {
     tickets (id) {
         id -> Integer,
         title -> Text,
@@ -22,4 +29,4 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(tickets, users,);
+diesel::allow_tables_to_appear_in_same_query!(sessions, tickets, users,);

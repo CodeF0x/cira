@@ -9,16 +9,19 @@ mod test_helpers;
 
 use crate::database::{
     create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
-    get_all_tickets, get_user_by_email, DataBase,
+    get_all_tickets, get_user_by_email, remove_session_from_db, write_session_to_db, DataBase,
 };
 use crate::errors::{
     ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
     ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
 };
 use crate::middleware::validator;
-use crate::models::{NewUser, Ticket, TokenClaims};
+use crate::models::{NewSession, NewUser, Ticket, TokenClaims};
 use crate::payloads::{FilterPayload, LoginPayload, TicketPayload};
+use actix_web::cookie::time::Duration;
+use actix_web::cookie::Cookie;
 use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web_httpauth::extractors::bearer::BearerAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use argonautica::Verifier;
 use diesel::result::Error;
@@ -30,8 +33,9 @@ use std::io::Result;
 
 #[actix_web::main]
 async fn main() -> Result<()> {
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         let bearer_middleware = HttpAuthentication::bearer(validator);
+
         App::new().service(sign_up).service(login).service(
             web::scope("")
                 .wrap(bearer_middleware)
@@ -39,7 +43,8 @@ async fn main() -> Result<()> {
                 .service(get_tickets)
                 .service(delete)
                 .service(edit)
-                .service(filter_tickets),
+                .service(filter_tickets)
+                .service(logout),
         )
     })
     .bind(("localhost", 8080))?
@@ -173,6 +178,21 @@ async fn sign_up(req_body: String) -> impl Responder {
     HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
+#[post("/log_out")]
+async fn logout(bearer: BearerAuth) -> impl Responder {
+    let mut database = DataBase::new();
+
+    remove_session_from_db(bearer.token().to_string(), &mut database.connection);
+
+    let bearer_cookie = Cookie::build("cira-bearer-token", "")
+        .http_only(true)
+        .max_age(Duration::new(-1, 0))
+        .finish();
+    HttpResponse::Ok()
+        .cookie(bearer_cookie)
+        .json("Successfully logged in")
+}
+
 #[post("/login")]
 async fn login(req_body: String) -> impl Responder {
     if let Ok(login_payload) = serde_json::from_str::<LoginPayload>(&req_body) {
@@ -200,7 +220,20 @@ async fn login(req_body: String) -> impl Responder {
                         id: database_user.id,
                     };
                     let token_str = claims.sign_with_key(&jwt_secret).unwrap();
-                    HttpResponse::Ok().json(token_str)
+
+                    write_session_to_db(
+                        NewSession {
+                            token: token_str.clone(),
+                        },
+                        &mut database.connection,
+                    );
+
+                    let bearer_cookie = Cookie::build("cira-bearer-token", token_str)
+                        .http_only(true)
+                        .finish();
+                    HttpResponse::Ok()
+                        .cookie(bearer_cookie)
+                        .json("Successfully logged in")
                 } else {
                     HttpResponse::Unauthorized().json("Incorrect username or password")
                 }

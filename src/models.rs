@@ -114,3 +114,16 @@ pub struct NewUser {
 pub struct TokenClaims {
     pub id: i32,
 }
+
+#[derive(Serialize, Deserialize, Queryable)]
+pub struct DatabaseSession {
+    pub id: i32,
+    pub token: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::sessions)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewSession {
+    pub token: String,
+}
