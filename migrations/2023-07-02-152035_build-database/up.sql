@@ -16,3 +16,8 @@ create table users (
     email text not null,
     password text not null
 );
+
+create table sessions (
+    id integer primary key not null,
+    token text not null
+);

@@ -1,11 +1,17 @@
 use crate::filters::{
     filter_by_assigned_user, filter_by_labels, filter_by_status, filter_by_title,
 };
-use crate::models::{DataBaseUser, Label, NewTicket, NewUser, SqliteTicket, Status, Ticket};
+use crate::models::{
+    DataBaseUser, DatabaseSession, Label, NewSession, NewTicket, NewUser, SqliteTicket, Status,
+    Ticket,
+};
 use crate::payloads::{FilterPayload, TicketPayload};
+use crate::schema::sessions::dsl::sessions;
+use crate::schema::sessions::token;
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, status, title};
-use crate::schema::users;
+use crate::schema::users::dsl::users;
+use crate::schema::users::email;
 use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
 use dotenvy::dotenv;
@@ -120,9 +126,16 @@ pub fn create_user(
         password: hash,
     };
 
-    diesel::insert_into(users::table)
+    diesel::insert_into(users)
         .values(new_user)
         .get_result(connection)
+}
+
+pub fn get_user_by_email(
+    user_email: String,
+    connection: &mut SqliteConnection,
+) -> QueryResult<DataBaseUser> {
+    users.filter(email.eq(user_email)).get_result(connection)
 }
 
 pub fn filter_tickets_in_database(
@@ -157,4 +170,27 @@ pub fn filter_tickets_in_database(
         }
         Err(_) => Err(()),
     };
+}
+
+pub fn write_session_to_db(new_session: NewSession, connection: &mut SqliteConnection) {
+    diesel::insert_into(sessions)
+        .values(new_session)
+        .execute(connection)
+        .unwrap();
+}
+
+pub fn remove_session_from_db(
+    session_token: String,
+    connection: &mut SqliteConnection,
+) -> QueryResult<usize> {
+    diesel::delete(sessions.filter(token.eq(session_token))).execute(connection)
+}
+
+pub fn session_in_db(session_token: String, connection: &mut SqliteConnection) -> bool {
+    matches!(
+        sessions
+            .filter(token.eq(session_token))
+            .get_result::<DatabaseSession>(connection),
+        Ok(_)
+    )
 }
