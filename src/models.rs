@@ -115,7 +115,7 @@ pub struct TokenClaims {
     pub id: i32,
 }
 
-#[derive(Serialize, Deserialize, Queryable)]
+#[derive(Serialize, Deserialize, Queryable, Debug)]
 pub struct DatabaseSession {
     pub id: i32,
     pub token: String,

@@ -179,18 +179,18 @@ pub fn write_session_to_db(new_session: NewSession, connection: &mut SqliteConne
         .unwrap();
 }
 
-pub fn remove_session_from_db(session_token: String, connection: &mut SqliteConnection) {
-    diesel::delete(sessions.filter(token.eq(session_token)))
-        .execute(connection)
-        .unwrap();
+pub fn remove_session_from_db(
+    session_token: String,
+    connection: &mut SqliteConnection,
+) -> QueryResult<usize> {
+    diesel::delete(sessions.filter(token.eq(session_token))).execute(connection)
 }
 
 pub fn session_in_db(session_token: String, connection: &mut SqliteConnection) -> bool {
-    match sessions
-        .filter(token.eq(session_token))
-        .get_result::<DatabaseSession>(connection)
-    {
-        Ok(_) => true,
-        _ => false,
-    }
+    matches!(
+        sessions
+            .filter(token.eq(session_token))
+            .get_result::<DatabaseSession>(connection),
+        Ok(_)
+    )
 }

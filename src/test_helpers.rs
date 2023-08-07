@@ -28,7 +28,8 @@ pub mod helpers {
         let test_user = NewUser {
             display_name: "user".to_string(),
             email: "test@example.com".to_string(),
-            password: "asdg7asd8g7".to_string(),
+            // hash of string "123"
+            password: "$argon2id$v=19$m=4096,t=192,p=24$0QaRo64feVRR8Ash0tB4tMDZeEcdYVUAB8j1QmJ/Uuc$NOYTu4UQ1cC8WSAaA3W05ognuj1z2WaTS7fvxhbTKQk".to_string(),
         };
 
         diesel::insert_into(tickets)

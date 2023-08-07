@@ -1,23 +1,25 @@
 mod database;
-mod errors;
 mod filters;
 mod middleware;
 mod models;
 mod payloads;
 mod schema;
+mod status_messages;
 mod test_helpers;
 
 use crate::database::{
     create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
     get_all_tickets, get_user_by_email, remove_session_from_db, write_session_to_db, DataBase,
 };
-use crate::errors::{
-    ERROR_COULD_NOT_CREATE, ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE,
-    ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND,
-};
 use crate::middleware::validator;
 use crate::models::{NewSession, NewUser, Ticket, TokenClaims};
 use crate::payloads::{FilterPayload, LoginPayload, TicketPayload};
+use crate::status_messages::{
+    CANNOT_LOGOUT, ERROR_COULD_NOT_CREATE_TICKET, ERROR_COULD_NOT_CREATE_USER,
+    ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE, ERROR_INCORRECT_PASSWORD,
+    ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND, ERROR_NOT_LOGGED_IN,
+    ERROR_NO_USER_FOUND, SUCCESS_LOGIN, SUCCESS_LOGOUT,
+};
 use actix_web::cookie::time::Duration;
 use actix_web::cookie::Cookie;
 use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -66,7 +68,7 @@ async fn create(req_body: String) -> impl Responder {
             payload.assigned_user,
         ) {
             Ok(ticket) => HttpResponse::Created().json(ticket.to_ticket()),
-            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE),
+            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_TICKET),
         };
     }
 
@@ -171,7 +173,7 @@ async fn sign_up(req_body: String) -> impl Responder {
 
         return match create_user(&mut database.connection, user_payload) {
             Ok(new_user) => HttpResponse::Created().json(new_user),
-            Err(_) => HttpResponse::InternalServerError().json("Could not create new user"),
+            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
         };
     }
 
@@ -182,15 +184,23 @@ async fn sign_up(req_body: String) -> impl Responder {
 async fn logout(bearer: BearerAuth) -> impl Responder {
     let mut database = DataBase::new();
 
-    remove_session_from_db(bearer.token().to_string(), &mut database.connection);
-
-    let bearer_cookie = Cookie::build("cira-bearer-token", "")
-        .http_only(true)
-        .max_age(Duration::new(-1, 0))
-        .finish();
-    HttpResponse::Ok()
-        .cookie(bearer_cookie)
-        .json("Successfully logged in")
+    return match remove_session_from_db(bearer.token().to_string(), &mut database.connection) {
+        Ok(rows_affected) => {
+            return match rows_affected {
+                0 => HttpResponse::NotFound().json(ERROR_NOT_LOGGED_IN),
+                _ => {
+                    let bearer_cookie = Cookie::build("cira-bearer-token", "")
+                        .http_only(true)
+                        .max_age(Duration::new(-1, 0))
+                        .finish();
+                    HttpResponse::Ok()
+                        .cookie(bearer_cookie)
+                        .json(SUCCESS_LOGOUT)
+                }
+            }
+        }
+        Err(_) => HttpResponse::InternalServerError().json(CANNOT_LOGOUT),
+    };
 }
 
 #[post("/login")]
@@ -231,23 +241,21 @@ async fn login(req_body: String) -> impl Responder {
                     let bearer_cookie = Cookie::build("cira-bearer-token", token_str)
                         .http_only(true)
                         .finish();
-                    HttpResponse::Ok()
-                        .cookie(bearer_cookie)
-                        .json("Successfully logged in")
+                    HttpResponse::Ok().cookie(bearer_cookie).json(SUCCESS_LOGIN)
                 } else {
-                    HttpResponse::Unauthorized().json("Incorrect username or password")
+                    HttpResponse::Unauthorized().json(ERROR_INCORRECT_PASSWORD)
                 }
             }
             Err(err) => {
                 return match err {
-                    Error::NotFound => HttpResponse::NotFound().json("No user found"),
-                    _ => HttpResponse::InternalServerError().json("Could not get user"),
+                    Error::NotFound => HttpResponse::NotFound().json(ERROR_NO_USER_FOUND),
+                    _ => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
                 }
             }
         };
     }
 
-    HttpResponse::BadRequest().json("Malformed JSON sent")
+    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 /*
@@ -632,6 +640,270 @@ mod tests {
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
 
             assert_eq!(response.len(), 0);
+        }
+    }
+
+    mod test_login {
+        use super::*;
+        use crate::database::DataBase;
+        use crate::login;
+        use crate::models::DatabaseSession;
+        use crate::schema::sessions::dsl::sessions;
+        use crate::test_helpers::helpers::setup_database;
+        use actix_web::http::StatusCode;
+        use actix_web::test;
+        use diesel::RunQueryDsl;
+        use serial_test::parallel;
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_login() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(login)).await;
+            let req = TestRequest::post()
+                .uri("/login")
+                .set_payload("{ \"email\": \"test@example.com\", \"password\": \"123\" }")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+            assert!(response
+                .headers()
+                .get("set-cookie")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("cira-bearer-token"));
+
+            let mut db = DataBase::new();
+
+            let tokens_in_db: Vec<DatabaseSession> = sessions.load(&mut db.connection).unwrap();
+
+            assert_ne!(tokens_in_db.first().unwrap().token, "".to_string());
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_wrong_password() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(login)).await;
+            let req = TestRequest::post()
+                .uri("/login")
+                .set_payload(
+                    "{ \"email\": \"test@example.com\", \"password\": \"wrong-password\" }",
+                )
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_email_not_found() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(login)).await;
+            let req = TestRequest::post()
+                .uri("/login")
+                .set_payload("{ \"email\": \"doesnotexist@test.de\", \"password\": \"123\" }")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
+        }
+
+        #[actix_web::test]
+        #[parallel]
+        async fn test_invalid_payload() {
+            let app = test::init_service(App::new().service(login)).await;
+            let req = TestRequest::post()
+                .uri("/login")
+                .set_payload("{}")
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    mod test_logout {
+        use crate::database::DataBase;
+        use crate::logout;
+        use crate::models::{DatabaseSession, NewSession};
+        use crate::schema::sessions::dsl::sessions;
+        use crate::test_helpers::helpers::setup_database;
+        use actix_web::http::StatusCode;
+        use actix_web::test::TestRequest;
+        use actix_web::{test, App};
+        use diesel::RunQueryDsl;
+        use serial_test::serial;
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_logout() {
+            setup_database();
+
+            let mut db = DataBase::new();
+            diesel::insert_into(sessions)
+                .values(NewSession {
+                    token: "123".to_string(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let app = test::init_service(App::new().service(logout)).await;
+            let req = TestRequest::post()
+                .uri("/log_out")
+                .insert_header(("Authorization", "Bearer 123"))
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            let active_sessions: Vec<DatabaseSession> = sessions.load(&mut db.connection).unwrap();
+
+            assert_eq!(response.status().as_u16(), StatusCode::OK);
+            assert_eq!(active_sessions.len(), 0);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_no_session_in_db() {
+            setup_database();
+
+            let mut db = DataBase::new();
+            diesel::insert_into(sessions)
+                .values(NewSession {
+                    token: "123".to_string(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let app = test::init_service(App::new().service(logout)).await;
+            let req = TestRequest::post()
+                .uri("/log_out")
+                .insert_header(("Authorization", "Bearer 404"))
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
+        }
+
+        // 401 when bearer token is missing is handled by lib
+    }
+
+    mod test_middleware {
+        use super::*;
+        use crate::database::DataBase;
+        use crate::get_tickets;
+        use crate::middleware::validator;
+        use crate::models::NewSession;
+        use crate::schema::sessions::dsl::sessions;
+        use actix_web::http::StatusCode;
+        use actix_web::{test, web};
+        use actix_web_httpauth::middleware::HttpAuthentication;
+        use diesel::RunQueryDsl;
+        use serial_test::serial;
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_middleware() {
+            setup_database();
+
+            // bearer for "123"
+            let bearer_token =
+                "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6MX0.oi92tHHWj5HdQO8Hd9vIYD6suTWosoiBnpdRBIcNGpM";
+
+            let mut db = DataBase::new();
+            diesel::insert_into(sessions)
+                .values(NewSession {
+                    token: bearer_token.to_string(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let app = test::init_service(
+                App::new().service(
+                    web::scope("")
+                        .wrap(HttpAuthentication::bearer(validator))
+                        .service(get_tickets),
+                ),
+            )
+            .await;
+            let req = TestRequest::get()
+                .uri("/tickets")
+                .insert_header(("Authorization", format!("Bearer {bearer_token}")))
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::OK);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_session_not_in_db() {
+            setup_database();
+
+            let mut db = DataBase::new();
+            diesel::insert_into(sessions)
+                .values(NewSession {
+                    token: "123".to_string(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let app = test::init_service(
+                App::new().service(
+                    web::scope("")
+                        .wrap(HttpAuthentication::bearer(validator))
+                        .service(get_tickets),
+                ),
+            )
+            .await;
+            let req = TestRequest::get()
+                .uri("/tickets")
+                .insert_header(("Authorization", "Bearer 404"))
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_wrong_bearer_token() {
+            setup_database();
+
+            let mut db = DataBase::new();
+            diesel::insert_into(sessions)
+                .values(NewSession {
+                    // actual working token, but removed last few characters
+                    token: "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6MX0.oi92tHHWj5HdQO8Hd9vIYD6suTWosoiBnpd"
+                        .to_string(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let app = test::init_service(
+                App::new().service(
+                    web::scope("")
+                        .wrap(HttpAuthentication::bearer(validator))
+                        .service(get_tickets),
+                ),
+            )
+            .await;
+            let req = TestRequest::get().uri("/tickets").insert_header(("Authorization", "Bearer eyJhbGciOiJIUzI1NiJ9.eyJpZCI6MX0.oi92tHHWj5HdQO8Hd9vIYD6suTWosoiBnpdRBIcNGpM")).to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
         }
     }
 }
