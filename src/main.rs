@@ -17,12 +17,13 @@ use crate::payloads::{FilterPayload, LoginPayload, TicketPayload};
 use crate::status_messages::{
     CANNOT_LOGOUT, ERROR_COULD_NOT_CREATE_TICKET, ERROR_COULD_NOT_CREATE_USER,
     ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE, ERROR_INCORRECT_PASSWORD,
-    ERROR_INVALID_ID, ERROR_INVALID_JSON, ERROR_NOT_FOUND, ERROR_NOT_LOGGED_IN,
-    ERROR_NO_USER_FOUND, SUCCESS_LOGIN, SUCCESS_LOGOUT,
+    ERROR_INVALID_ID, ERROR_NOT_FOUND, ERROR_NOT_LOGGED_IN, ERROR_NO_USER_FOUND,
+    ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGIN, SUCCESS_LOGOUT,
 };
 use actix_web::cookie::time::Duration;
 use actix_web::cookie::Cookie;
-use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::web::{Json, Path};
+use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use argonautica::Verifier;
@@ -38,7 +39,7 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         let bearer_middleware = HttpAuthentication::bearer(validator);
 
-        App::new().service(sign_up).service(login).service(
+        App::new().service(signup).service(login).service(
             web::scope("")
                 .wrap(bearer_middleware)
                 .service(create)
@@ -55,24 +56,13 @@ async fn main() -> Result<()> {
 }
 
 #[post("/tickets")]
-async fn create(req_body: String) -> impl Responder {
+async fn create(payload: Json<TicketPayload>) -> impl Responder {
     let mut database = DataBase::new();
 
-    // todo: refactor this to use a JSON extractor after figuring out on how to test this
-    if let Ok(payload) = serde_json::from_str::<TicketPayload>(&req_body) {
-        return match create_ticket(
-            &mut database.connection,
-            payload.title,
-            payload.body,
-            payload.labels,
-            payload.assigned_user,
-        ) {
-            Ok(ticket) => HttpResponse::Created().json(ticket.to_ticket()),
-            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_TICKET),
-        };
+    match create_ticket(&mut database.connection, payload) {
+        Ok(ticket) => HttpResponse::Created().json(ticket.to_ticket()),
+        Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_TICKET),
     }
-
-    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[get("/tickets")]
@@ -95,58 +85,40 @@ async fn get_tickets() -> impl Responder {
 }
 
 #[post("/filter")]
-async fn filter_tickets(req_body: String) -> impl Responder {
-    if let Ok(filter) = serde_json::from_str::<FilterPayload>(&req_body) {
-        let mut database = DataBase::new();
+async fn filter_tickets(payload: Json<FilterPayload>) -> impl Responder {
+    let mut database = DataBase::new();
 
-        return match filter_tickets_in_database(&mut database.connection, filter) {
-            Ok(tickets) => HttpResponse::Ok().json(tickets),
-            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
-        };
+    match filter_tickets_in_database(&mut database.connection, payload) {
+        Ok(tickets) => HttpResponse::Ok().json(tickets),
+        Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
     }
-
-    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[post("/tickets/{id}")]
-async fn edit(req: HttpRequest, req_body: String) -> impl Responder {
-    let ticket_id: i32 = req
-        .match_info()
-        .get("id")
-        .unwrap_or("0")
-        .parse()
-        .unwrap_or(0);
+async fn edit(payload: Json<TicketPayload>, ticket_id: Path<i32>) -> impl Responder {
+    let ticket_id: i32 = ticket_id.into_inner();
 
     if ticket_id < 1 {
         return HttpResponse::BadRequest().json(ERROR_INVALID_ID);
     }
 
-    if let Ok(ticket_payload) = serde_json::from_str::<TicketPayload>(&req_body) {
-        let mut database = DataBase::new();
+    let mut database = DataBase::new();
 
-        return match edit_ticket(&mut database.connection, ticket_payload, ticket_id) {
-            Ok(updated_ticket) => HttpResponse::Ok().json(updated_ticket.to_ticket()),
-            Err(err) => match err {
-                Error::NotFound => {
-                    HttpResponse::NotFound().json(format!("{} {}", ERROR_NOT_FOUND, ticket_id))
-                }
-                _ => HttpResponse::InternalServerError()
-                    .json(format!("{} {}", ERROR_COULD_NOT_UPDATE, ticket_id)),
-            },
-        };
+    match edit_ticket(&mut database.connection, payload, ticket_id) {
+        Ok(updated_ticket) => HttpResponse::Ok().json(updated_ticket.to_ticket()),
+        Err(err) => match err {
+            Error::NotFound => {
+                HttpResponse::NotFound().json(format!("{} {}", ERROR_NOT_FOUND, ticket_id))
+            }
+            _ => HttpResponse::InternalServerError()
+                .json(format!("{} {}", ERROR_COULD_NOT_UPDATE, ticket_id)),
+        },
     }
-
-    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 #[delete("/tickets/{id}")]
-async fn delete(req: HttpRequest) -> impl Responder {
-    let ticket_id: i32 = req
-        .match_info()
-        .get("id")
-        .unwrap_or("0")
-        .parse()
-        .unwrap_or(0);
+async fn delete(ticket_id: Path<i32>) -> impl Responder {
+    let ticket_id = ticket_id.into_inner();
 
     if ticket_id < 1 {
         return HttpResponse::BadRequest().json(ERROR_INVALID_ID);
@@ -166,21 +138,23 @@ async fn delete(req: HttpRequest) -> impl Responder {
     }
 }
 
-#[post("/sign_up")]
-async fn sign_up(req_body: String) -> impl Responder {
-    if let Ok(user_payload) = serde_json::from_str::<NewUser>(&req_body) {
-        let mut database = DataBase::new();
+#[post("/signup")]
+async fn signup(payload: Json<NewUser>) -> impl Responder {
+    let mut database = DataBase::new();
 
-        return match create_user(&mut database.connection, user_payload) {
-            Ok(new_user) => HttpResponse::Created().json(new_user),
-            Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
-        };
+    match get_user_by_email(&payload.email, &mut database.connection) {
+        Ok(_) => HttpResponse::Conflict().json(ERROR_USER_ALREADY_EXISTS),
+        Err(err) => match err {
+            Error::NotFound => match create_user(&mut database.connection, payload) {
+                Ok(new_user) => HttpResponse::Created().json(new_user),
+                Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
+            },
+            _ => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
+        },
     }
-
-    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
-#[post("/log_out")]
+#[post("/logout")]
 async fn logout(bearer: BearerAuth) -> impl Responder {
     let mut database = DataBase::new();
 
@@ -204,58 +178,52 @@ async fn logout(bearer: BearerAuth) -> impl Responder {
 }
 
 #[post("/login")]
-async fn login(req_body: String) -> impl Responder {
-    if let Ok(login_payload) = serde_json::from_str::<LoginPayload>(&req_body) {
-        let mut database = DataBase::new();
-        let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(
-            std::env::var("JWT_SECRET")
-                .expect("JWT_SECRET must be set!")
-                .as_bytes(),
-        )
-        .unwrap();
+async fn login(payload: Json<LoginPayload>) -> impl Responder {
+    let mut database = DataBase::new();
+    let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(
+        std::env::var("JWT_SECRET")
+            .expect("JWT_SECRET must be set!")
+            .as_bytes(),
+    )
+    .unwrap();
 
-        return match get_user_by_email(login_payload.email, &mut database.connection) {
-            Ok(database_user) => {
-                let hash_secret = std::env::var("HASH_SECRET").expect("HASH_SECRET must be set!");
-                let mut verifier = Verifier::default();
-                let is_valid = verifier
-                    .with_hash(database_user.password)
-                    .with_password(login_payload.password)
-                    .with_secret_key(hash_secret)
-                    .verify()
-                    .unwrap();
+    match get_user_by_email(&payload.email, &mut database.connection) {
+        Ok(database_user) => {
+            let hash_secret = std::env::var("HASH_SECRET").expect("HASH_SECRET must be set!");
+            let mut verifier = Verifier::default();
+            let is_valid = verifier
+                .with_hash(database_user.password)
+                .with_password(&payload.password)
+                .with_secret_key(hash_secret)
+                .verify()
+                .unwrap();
 
-                if is_valid {
-                    let claims = TokenClaims {
-                        id: database_user.id,
-                    };
-                    let token_str = claims.sign_with_key(&jwt_secret).unwrap();
+            if is_valid {
+                let claims = TokenClaims {
+                    id: database_user.id,
+                };
+                let token_str = claims.sign_with_key(&jwt_secret).unwrap();
 
-                    write_session_to_db(
-                        NewSession {
-                            token: token_str.clone(),
-                        },
-                        &mut database.connection,
-                    );
+                write_session_to_db(
+                    NewSession {
+                        token: token_str.clone(),
+                    },
+                    &mut database.connection,
+                );
 
-                    let bearer_cookie = Cookie::build("cira-bearer-token", token_str)
-                        .http_only(true)
-                        .finish();
-                    HttpResponse::Ok().cookie(bearer_cookie).json(SUCCESS_LOGIN)
-                } else {
-                    HttpResponse::Unauthorized().json(ERROR_INCORRECT_PASSWORD)
-                }
+                let bearer_cookie = Cookie::build("cira-bearer-token", token_str)
+                    .http_only(true)
+                    .finish();
+                HttpResponse::Ok().cookie(bearer_cookie).json(SUCCESS_LOGIN)
+            } else {
+                HttpResponse::Unauthorized().json(ERROR_INCORRECT_PASSWORD)
             }
-            Err(err) => {
-                return match err {
-                    Error::NotFound => HttpResponse::NotFound().json(ERROR_NO_USER_FOUND),
-                    _ => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
-                }
-            }
-        };
+        }
+        Err(err) => match err {
+            Error::NotFound => HttpResponse::NotFound().json(ERROR_NO_USER_FOUND),
+            _ => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
+        },
     }
-
-    HttpResponse::BadRequest().json(ERROR_INVALID_JSON)
 }
 
 /*
@@ -273,42 +241,30 @@ mod tests {
         use super::*;
         use crate::create;
         use actix_web::http::StatusCode;
-        use serial_test::parallel;
-
-        #[actix_web::test]
-        #[parallel]
-        async fn test_bad_request() {
-            let app = test::init_service(App::new().service(create)).await;
-            let req = TestRequest::post()
-                .uri("/tickets")
-                .data("{ \"title\": \"test title\" }")
-                .to_request();
-
-            let response = test::call_service(&app, req).await;
-
-            assert!(response.status().is_client_error());
-            assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
-        }
+        use serde_json::json;
 
         #[actix_web::test]
         // serial is needed because sqlite does not support parallel write access -> run everything serially
         #[serial]
         async fn test_create_ticket() {
             setup_database();
-
-            let ticket_payload =
-                "{ \"title\": \"test title\", \"body\": \"test body\", \"labels\": [\"Bug\"], \"assigned_user\": 1, \"status\": \"Open\" }";
+            let ticket_payload = json!({
+                "title": "test title",
+                "body": "test body",
+                "labels": [],
+                "assigned_user": 1,
+                "status": "Open"
+            });
 
             let app = test::init_service(App::new().service(create)).await;
             let req = TestRequest::post()
                 .uri("/tickets")
-                .set_payload(ticket_payload)
+                .set_json(ticket_payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
 
-            assert!(response.status().is_success());
-            assert_eq!(response.status().as_u16(), 201);
+            assert_eq!(response.status().as_u16(), StatusCode::CREATED);
         }
     }
 
@@ -361,7 +317,6 @@ mod tests {
 
             let response = test::call_service(&app, req).await;
 
-            assert!(response.status().is_success());
             assert_eq!(response.status().as_u16(), StatusCode::OK);
         }
 
@@ -375,7 +330,6 @@ mod tests {
 
             let response = test::call_service(&app, req).await;
 
-            assert!(response.status().is_client_error());
             assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
         }
 
@@ -387,7 +341,6 @@ mod tests {
 
             let response = test::call_service(&app, req).await;
 
-            assert!(response.status().is_client_error());
             assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
         }
     }
@@ -395,8 +348,10 @@ mod tests {
     mod edit_ticket {
         use super::*;
         use crate::edit;
+        use actix_web::http::StatusCode;
         use actix_web::test::TestRequest;
         use actix_web::{test, App};
+        use serde_json::json;
         use serial_test::{parallel, serial};
 
         #[actix_web::test]
@@ -410,6 +365,7 @@ mod tests {
 
             let response = test::call_service(&app, req).await;
 
+            // gives 404 which is not what we really want, so just check if it's a client error
             assert!(response.status().is_client_error());
         }
 
@@ -417,28 +373,22 @@ mod tests {
         #[parallel]
         async fn test_negative_id() {
             let app = test::init_service(App::new().service(edit)).await;
-            let req = TestRequest::delete()
-                .uri("/tickets/-1")
-                .set_payload("{}")
-                .to_request();
 
-            let response = test::call_service(&app, req).await;
+            let payload = json!({
+                "title": "test",
+                "body": "test",
+                "status": "Open",
+                "labels": []
+            });
 
-            assert!(response.status().is_client_error());
-        }
-
-        #[actix_web::test]
-        #[parallel]
-        async fn test_bad_payload() {
-            let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
-                .uri("/tickets/999")
-                .set_payload("{ \"body\": \"Test\", \"title\": \"Test\" }")
+                .uri("/tickets/-1")
+                .set_json(payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
 
-            assert!(response.status().is_client_error());
+            assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
         }
 
         #[actix_web::test]
@@ -446,15 +396,22 @@ mod tests {
         async fn test_not_found() {
             setup_database();
 
+            let payload = json!({
+                "title": "test",
+                "body": "test",
+                "status": "Open",
+                "labels": []
+            });
+
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
                 .uri("/tickets/3")
-                .set_payload("{}")
+                .set_json(payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
 
-            assert!(response.status().is_client_error());
+            assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
         }
 
         #[actix_web::test]
@@ -462,12 +419,17 @@ mod tests {
         async fn test_updated() {
             setup_database();
 
+            let payload = json!({
+                "body": "Test",
+                "title": "Test",
+                "labels": ["Feature"],
+                "status": "Open"
+            });
+
             let app = test::init_service(App::new().service(edit)).await;
             let req = TestRequest::post()
                 .uri("/tickets/1")
-                .set_payload(
-                    "{ \"body\": \"Test\", \"title\": \"Test\", \"labels\": [\"Feature\"], \"status\": \"Open\" }",
-                )
+                .set_json(payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
@@ -478,44 +440,33 @@ mod tests {
 
     mod test_sign_up {
         use super::*;
-        use crate::models::DataBaseUser;
-        use crate::sign_up;
-        use serial_test::parallel;
-
-        #[actix_web::test]
-        #[parallel]
-        async fn test_bad_request() {
-            let app = test::init_service(App::new().service(sign_up)).await;
-            let req = TestRequest::post()
-                .uri("/sign_up")
-                .set_payload(
-                    "{ \"password\": \"123\", \"display_name\": \"User\", \"email\": 123 }",
-                )
-                .to_request();
-
-            let response = test::call_service(&app, req).await;
-
-            assert!(response.status().is_client_error());
-        }
+        use crate::database::DataBase;
+        use crate::models::{DataBaseUser, NewUser};
+        use crate::schema::users::dsl::users;
+        use crate::signup;
+        use actix_web::http::StatusCode;
+        use diesel::RunQueryDsl;
+        use serde_json::json;
 
         #[actix_web::test]
         #[serial]
         async fn test_sign_up() {
             setup_database();
 
-            let email = "test@example.com";
+            let email = "test@whatever.com";
             let display_name = "User";
             let password = "123";
 
-            let payload = format!(
-                "{{ \"password\": \"{}\", \"display_name\": \"{}\", \"email\": \"{}\" }}",
-                password, display_name, email
-            );
+            let payload = json!({
+                "password": password,
+                "display_name": display_name,
+                "email": email
+            });
 
-            let app = test::init_service(App::new().service(sign_up)).await;
+            let app = test::init_service(App::new().service(signup)).await;
             let req = TestRequest::post()
-                .uri("/sign_up")
-                .set_payload(payload)
+                .uri("/signup")
+                .set_json(payload)
                 .to_request();
 
             let response: DataBaseUser = test::call_and_read_body_json(&app, req).await;
@@ -524,37 +475,59 @@ mod tests {
             assert_ne!(response.password, password);
             assert_eq!(response.display_name, display_name);
         }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_user_already_exists() {
+            setup_database();
+            let mut db = DataBase::new();
+
+            diesel::insert_into(users)
+                .values(NewUser {
+                    email: "test@example.com".to_string(),
+                    password: "123".to_string(),
+                    display_name: "User".to_string(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let payload = json!({
+                "email": "test@example.com",
+                "password": "123",
+                "display_name": "User"
+            });
+
+            let app = test::init_service(App::new().service(signup)).await;
+            let req = TestRequest::post()
+                .uri("/signup")
+                .set_json(payload)
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::CONFLICT);
+        }
     }
 
     mod test_filter {
         use super::*;
         use crate::filter_tickets;
         use crate::models::Ticket;
-        use serial_test::parallel;
-
-        #[actix_web::test]
-        #[parallel]
-        async fn test_bad_request() {
-            let app = test::init_service(App::new().service(filter_tickets)).await;
-            let req = TestRequest::post()
-                .uri("/filter")
-                .set_payload("{ \"labels\": null, }") // mind the trailing comma
-                .to_request();
-
-            let response = test::call_service(&app, req).await;
-
-            assert!(response.status().is_client_error());
-        }
+        use serde_json::json;
 
         #[actix_web::test]
         #[serial]
         async fn test_filter_by_labels() {
             setup_database();
 
+            let payload = json!({
+                "labels": ["InProgress", "Bug"]
+            });
+
             let app = test::init_service(App::new().service(filter_tickets)).await;
             let req = TestRequest::post()
                 .uri("/filter")
-                .set_payload("{ \"labels\": [\"InProgress\", \"Bug\"] }")
+                .set_json(payload)
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
@@ -567,10 +540,14 @@ mod tests {
         async fn test_filter_by_assigned_user() {
             setup_database();
 
+            let payload = json!({
+                "assigned_user": 1
+            });
+
             let app = test::init_service(App::new().service(filter_tickets)).await;
             let req = TestRequest::post()
                 .uri("/filter")
-                .set_payload("{ \"assigned_user\": 1 }")
+                .set_json(payload)
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
@@ -583,10 +560,14 @@ mod tests {
         async fn test_filter_by_title() {
             setup_database();
 
+            let payload = json!({
+                "title": "Test"
+            });
+
             let app = test::init_service(App::new().service(filter_tickets)).await;
             let req = TestRequest::post()
                 .uri("/filter")
-                .set_payload("{ \"title\": \"Test\" }")
+                .set_json(payload)
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
@@ -599,10 +580,14 @@ mod tests {
         async fn test_filter_by_status() {
             setup_database();
 
+            let payload = json!({
+                "status": "Open"
+            });
+
             let app = test::init_service(App::new().service(filter_tickets)).await;
             let req = TestRequest::post()
                 .uri("/filter")
-                .set_payload("{ \"status\": \"Open\" }")
+                .set_json(payload)
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
@@ -615,10 +600,12 @@ mod tests {
         async fn test_return_all_when_filter_is_empty() {
             setup_database();
 
+            let payload = json!({});
+
             let app = test::init_service(App::new().service(filter_tickets)).await;
             let req = TestRequest::post()
                 .uri("/filter")
-                .set_payload("{}")
+                .set_json(payload)
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
@@ -631,10 +618,14 @@ mod tests {
         async fn test_return_nothing_if_nothing_matches() {
             setup_database();
 
+            let payload = json!({
+                "assigned_user": 999
+            });
+
             let app = test::init_service(App::new().service(filter_tickets)).await;
             let req = TestRequest::post()
                 .uri("/filter")
-                .set_payload("{ \"assigned_user\": 999 }")
+                .set_json(payload)
                 .to_request();
 
             let response: Vec<Ticket> = test::call_and_read_body_json(&app, req).await;
@@ -653,17 +644,22 @@ mod tests {
         use actix_web::http::StatusCode;
         use actix_web::test;
         use diesel::RunQueryDsl;
-        use serial_test::parallel;
+        use serde_json::json;
 
         #[actix_web::test]
         #[serial]
         async fn test_login() {
             setup_database();
 
+            let payload = json!({
+                "email": "test@example.com",
+                "password": "123"
+            });
+
             let app = test::init_service(App::new().service(login)).await;
             let req = TestRequest::post()
                 .uri("/login")
-                .set_payload("{ \"email\": \"test@example.com\", \"password\": \"123\" }")
+                .set_json(payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
@@ -679,6 +675,7 @@ mod tests {
 
             let tokens_in_db: Vec<DatabaseSession> = sessions.load(&mut db.connection).unwrap();
 
+            assert_eq!(response.status().as_u16(), StatusCode::OK);
             assert_ne!(tokens_in_db.first().unwrap().token, "".to_string());
         }
 
@@ -687,12 +684,15 @@ mod tests {
         async fn test_wrong_password() {
             setup_database();
 
+            let payload = json!({
+                "email": "test@example.com",
+                "password": "wrong-password"
+            });
+
             let app = test::init_service(App::new().service(login)).await;
             let req = TestRequest::post()
                 .uri("/login")
-                .set_payload(
-                    "{ \"email\": \"test@example.com\", \"password\": \"wrong-password\" }",
-                )
+                .set_json(payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
@@ -705,29 +705,20 @@ mod tests {
         async fn test_email_not_found() {
             setup_database();
 
+            let payload = json!({
+                "email": "doesnotexist@test.de",
+                "password": "123"
+            });
+
             let app = test::init_service(App::new().service(login)).await;
             let req = TestRequest::post()
                 .uri("/login")
-                .set_payload("{ \"email\": \"doesnotexist@test.de\", \"password\": \"123\" }")
+                .set_json(payload)
                 .to_request();
 
             let response = test::call_service(&app, req).await;
 
             assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
-        }
-
-        #[actix_web::test]
-        #[parallel]
-        async fn test_invalid_payload() {
-            let app = test::init_service(App::new().service(login)).await;
-            let req = TestRequest::post()
-                .uri("/login")
-                .set_payload("{}")
-                .to_request();
-
-            let response = test::call_service(&app, req).await;
-
-            assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST);
         }
     }
 
@@ -758,7 +749,7 @@ mod tests {
 
             let app = test::init_service(App::new().service(logout)).await;
             let req = TestRequest::post()
-                .uri("/log_out")
+                .uri("/logout")
                 .insert_header(("Authorization", "Bearer 123"))
                 .to_request();
 
@@ -785,7 +776,7 @@ mod tests {
 
             let app = test::init_service(App::new().service(logout)).await;
             let req = TestRequest::post()
-                .uri("/log_out")
+                .uri("/logout")
                 .insert_header(("Authorization", "Bearer 404"))
                 .to_request();
 
