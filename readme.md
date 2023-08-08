@@ -1,3 +1,5 @@
+> Warning: You should probably not use this in production or with any data that is sensitive as the authentication system
+> is made very amateurish.
 
 # Cira - a minimalistic ticket system backend
 
@@ -18,6 +20,7 @@ Cira gives you the foundation to:
 - group tickets by labels
 - assign tickets to users
 - filter tickets by labels, assignee, status and labels
+- authentication with bearer tokens
 
 
 ## Run Locally
@@ -30,15 +33,13 @@ You are required to have installed: [the rust programming language](https://rust
 ```bash
 git clone https://github.com/CodeF0x/cira-backend.git
 cd cira-backend
-echo "DATABASE_URL=cira-backend.sqlite" >> .env
-diesel migration run --database-url cira-backend.sqlite
-echo "HASH_SECRET=<your secure hash secret>" >> .env
 cargo build --release
 ./target/release/<name of executable>
 ```
+There are some default values set in the .env file, you can adjust them as you wish.
+Keep in mind to change the code as well.
 
 You can also launch it in a screen or in a container, so it runs without an active shell session.
-
 
 
 ## Running Tests
@@ -47,7 +48,6 @@ To run tests, set up a fake database that is independent of the actual productio
 You need to have installed [diesel](https://diesel.rs), and [rust](https://rust-lang.org).
 
 ```bash
-echo "TEST_DATABASE_URL=test-backend.sqlite"
 diesel migration run --database-url test-backend.sqlite
 cargo test
 ```
