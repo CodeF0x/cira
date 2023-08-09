@@ -2,8 +2,7 @@ use crate::filters::{
     filter_by_assigned_user, filter_by_labels, filter_by_status, filter_by_title,
 };
 use crate::models::{
-    DataBaseUser, DatabaseSession, Label, NewSession, NewTicket, NewUser, SqliteTicket, Status,
-    Ticket,
+    DataBaseUser, DatabaseSession, NewSession, NewTicket, NewUser, SqliteTicket, Status, Ticket,
 };
 use crate::payloads::{FilterPayload, TicketPayload};
 use crate::schema::sessions::dsl::sessions;
@@ -12,6 +11,7 @@ use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, status, title};
 use crate::schema::users::dsl::users;
 use crate::schema::users::email;
+use actix_web::web::Json;
 use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
 use dotenvy::dotenv;
@@ -43,10 +43,7 @@ impl DataBase {
 
 pub fn create_ticket(
     connection: &mut SqliteConnection,
-    new_title: String,
-    new_body: String,
-    new_labels: Vec<Label>,
-    new_user: Option<i32>,
+    new_ticket: Json<TicketPayload>,
 ) -> QueryResult<SqliteTicket> {
     use crate::schema::tickets;
 
@@ -54,12 +51,12 @@ pub fn create_ticket(
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::new(0, 0));
     let new_ticket = NewTicket {
-        title: new_title,
-        body: new_body,
+        title: new_ticket.title.clone(),
+        body: new_ticket.body.clone(),
         created: now_in_millis.as_millis().to_string(),
         last_modified: now_in_millis.as_millis().to_string(),
-        labels: serde_json::to_string(&new_labels).unwrap(),
-        assigned_user: new_user,
+        labels: serde_json::to_string(&new_ticket.labels).unwrap(),
+        assigned_user: new_ticket.assigned_user,
         // status is required to be sent by user to not have ugly null handling in update function,
         // so even if user sends "Closed", set it to open.
         // Makes not sense to create a closed ticket.
@@ -84,7 +81,7 @@ pub fn delete_ticket(
 
 pub fn edit_ticket(
     connection: &mut SqliteConnection,
-    ticket: TicketPayload,
+    ticket: Json<TicketPayload>,
     ticket_id: i32,
 ) -> QueryResult<SqliteTicket> {
     let now_in_millis = SystemTime::now()
@@ -93,8 +90,8 @@ pub fn edit_ticket(
 
     diesel::update(tickets.filter(id.eq(ticket_id)))
         .set((
-            title.eq(ticket.title),
-            body.eq(ticket.body),
+            title.eq(&ticket.title),
+            body.eq(&ticket.body),
             labels.eq(serde_json::to_string(&ticket.labels).unwrap()),
             last_modified.eq(now_in_millis.as_millis().to_string()),
             status.eq(ticket.status.to_string()),
@@ -104,7 +101,7 @@ pub fn edit_ticket(
 
 pub fn create_user(
     connection: &mut SqliteConnection,
-    user_payload: NewUser,
+    user_payload: Json<NewUser>,
 ) -> QueryResult<DataBaseUser> {
     dotenv().ok();
 
@@ -112,7 +109,7 @@ pub fn create_user(
     let mut hasher = Hasher::default();
 
     let hash = hasher
-        .with_password(user_payload.password)
+        .with_password(&user_payload.password)
         .with_secret_key(hash_secret)
         .hash()
         .unwrap();
@@ -121,8 +118,8 @@ pub fn create_user(
     // values are written to database in the order they are in the struct
     // keep in mind to not "assign" e. g. password to email
     let new_user = NewUser {
-        display_name: user_payload.display_name,
-        email: user_payload.email,
+        display_name: user_payload.display_name.clone(),
+        email: user_payload.email.clone(),
         password: hash,
     };
 
@@ -132,7 +129,7 @@ pub fn create_user(
 }
 
 pub fn get_user_by_email(
-    user_email: String,
+    user_email: &str,
     connection: &mut SqliteConnection,
 ) -> QueryResult<DataBaseUser> {
     users.filter(email.eq(user_email)).get_result(connection)
@@ -140,7 +137,7 @@ pub fn get_user_by_email(
 
 pub fn filter_tickets_in_database(
     connection: &mut SqliteConnection,
-    filter_payload: FilterPayload,
+    filter_payload: Json<FilterPayload>,
 ) -> Result<Vec<Ticket>, ()> {
     /*
      * It's probably a horrible idea to fetch all data from the database an then map and filter through each and every entry,

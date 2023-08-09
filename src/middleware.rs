@@ -48,8 +48,6 @@ pub async fn validator(
                 .unwrap_or_default()
                 .scope("");
 
-            println!("Wrong token");
-
             Err((AuthenticationError::from(config).into(), req))
         }
     }

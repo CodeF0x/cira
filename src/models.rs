@@ -93,7 +93,7 @@ impl SqliteTicket {
     }
 }
 
-#[derive(Serialize, Deserialize, Queryable)]
+#[derive(Serialize, Deserialize, Queryable, Debug)]
 pub struct DataBaseUser {
     pub id: i32,
     pub display_name: String,
