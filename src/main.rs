@@ -20,6 +20,7 @@ use crate::status_messages::{
     ERROR_INVALID_ID, ERROR_NOT_FOUND, ERROR_NOT_LOGGED_IN, ERROR_NO_USER_FOUND,
     ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGIN, SUCCESS_LOGOUT,
 };
+use actix_cors::Cors;
 use actix_web::cookie::time::Duration;
 use actix_web::cookie::Cookie;
 use actix_web::web::{Json, Path};
@@ -39,16 +40,22 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         let bearer_middleware = HttpAuthentication::bearer(validator);
 
-        App::new().service(signup).service(login).service(
-            web::scope("")
-                .wrap(bearer_middleware)
-                .service(create)
-                .service(get_tickets)
-                .service(delete)
-                .service(edit)
-                .service(filter_tickets)
-                .service(logout),
-        )
+        let cors = Cors::permissive();
+
+        App::new()
+            .wrap(cors)
+            .service(signup)
+            .service(login)
+            .service(
+                web::scope("")
+                    .wrap(bearer_middleware)
+                    .service(create)
+                    .service(get_tickets)
+                    .service(delete)
+                    .service(edit)
+                    .service(filter_tickets)
+                    .service(logout),
+            )
     })
     .bind(("localhost", 8080))?
     .run()
