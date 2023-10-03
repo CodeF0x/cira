@@ -72,6 +72,13 @@ pub fn get_all_tickets(connection: &mut SqliteConnection) -> QueryResult<Vec<Sql
     tickets.load::<SqliteTicket>(connection)
 }
 
+pub fn get_single_ticket(
+    ticket_id: i32,
+    connection: &mut SqliteConnection,
+) -> QueryResult<SqliteTicket> {
+    tickets.filter(id.eq(ticket_id)).get_result(connection)
+}
+
 pub fn delete_ticket(
     connection: &mut SqliteConnection,
     ticked_id: i32,
