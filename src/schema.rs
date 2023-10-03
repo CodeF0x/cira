@@ -29,6 +29,8 @@ diesel::table! {
     }
 }
 
-// gets reformatted every time running diesel migration
-#[rustfmt::skip]
-diesel::allow_tables_to_appear_in_same_query!(sessions, tickets, users,);
+diesel::allow_tables_to_appear_in_same_query!(
+    sessions,
+    tickets,
+    users,
+);

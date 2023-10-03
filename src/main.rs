@@ -9,7 +9,8 @@ mod test_helpers;
 
 use crate::database::{
     create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
-    get_all_tickets, get_user_by_email, remove_session_from_db, write_session_to_db, DataBase,
+    get_all_tickets, get_single_ticket, get_user_by_email, remove_session_from_db,
+    write_session_to_db, DataBase,
 };
 use crate::middleware::validator;
 use crate::models::{NewSession, NewUser, Ticket, TokenClaims};
@@ -18,7 +19,7 @@ use crate::status_messages::{
     CANNOT_LOGOUT, ERROR_COULD_NOT_CREATE_TICKET, ERROR_COULD_NOT_CREATE_USER,
     ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE, ERROR_INCORRECT_PASSWORD,
     ERROR_INVALID_ID, ERROR_NOT_FOUND, ERROR_NOT_LOGGED_IN, ERROR_NO_USER_FOUND,
-    ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGIN, SUCCESS_LOGOUT,
+    ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGOUT,
 };
 use actix_cors::Cors;
 use actix_web::cookie::time::Duration;
@@ -40,22 +41,21 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         let bearer_middleware = HttpAuthentication::bearer(validator);
 
-        let cors = Cors::permissive();
+        let cors = Cors::permissive().allow_any_method().allow_any_origin();
 
-        App::new()
-            .wrap(cors)
-            .service(signup)
-            .service(login)
-            .service(
+        App::new().wrap(cors).service(
+            web::scope("/api").service(signup).service(login).service(
                 web::scope("")
                     .wrap(bearer_middleware)
                     .service(create)
                     .service(get_tickets)
+                    .service(get_ticket)
                     .service(delete)
                     .service(edit)
                     .service(filter_tickets)
                     .service(logout),
-            )
+            ),
+        )
     })
     .bind(("localhost", 8080))?
     .run()
@@ -88,6 +88,22 @@ async fn get_tickets() -> impl Responder {
             HttpResponse::Ok().json(tickets)
         }
         Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
+    }
+}
+
+#[get("/tickets/{id}")]
+async fn get_ticket(ticket_id: Path<i32>) -> impl Responder {
+    let mut database = DataBase::new();
+    let ticket_id = ticket_id.into_inner();
+
+    match get_single_ticket(ticket_id, &mut database.connection) {
+        Ok(ticket) => HttpResponse::Ok().json(ticket.to_ticket()),
+        Err(err) => match err {
+            Error::NotFound => {
+                HttpResponse::NotFound().json(format!("{} {}", ERROR_NOT_FOUND, ticket_id))
+            }
+            _ => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_GET),
+        },
     }
 }
 
@@ -218,10 +234,10 @@ async fn login(payload: Json<LoginPayload>) -> impl Responder {
                     &mut database.connection,
                 );
 
-                let bearer_cookie = Cookie::build("cira-bearer-token", token_str)
-                    .http_only(true)
+                let bearer_cookie = Cookie::build("cira-bearer-token", &token_str)
+                    .http_only(false)
                     .finish();
-                HttpResponse::Ok().cookie(bearer_cookie).json(SUCCESS_LOGIN)
+                HttpResponse::Ok().cookie(bearer_cookie).body(token_str)
             } else {
                 HttpResponse::Unauthorized().json(ERROR_INCORRECT_PASSWORD)
             }
@@ -902,6 +918,39 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    mod get_ticket {
+        use super::*;
+        use crate::get_ticket;
+        use crate::models::Ticket;
+        use actix_web::http::StatusCode;
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_get_ticket() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(get_ticket)).await;
+            let req = TestRequest::get().uri("/tickets/1").to_request();
+
+            let response: Ticket = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response.id, 1);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn not_found() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(get_ticket)).await;
+            let req = TestRequest::get().uri("/tickets/333").to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
         }
     }
 }
