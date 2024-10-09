@@ -2,13 +2,14 @@ use crate::database::{session_in_db, DataBase};
 use crate::models::TokenClaims;
 use actix_web::dev::ServiceRequest;
 use actix_web::{Error, HttpMessage};
-use actix_web_httpauth::extractors::bearer::BearerAuth;
+use actix_web_httpauth::extractors::bearer::{BearerAuth, Config};
 use actix_web_httpauth::extractors::{bearer, AuthenticationError};
 use dotenvy::dotenv;
 use hmac::digest::KeyInit;
 use hmac::Hmac;
 use jwt::VerifyWithKey;
 use sha2::Sha256;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn validator(
     req: ServiceRequest,
@@ -38,15 +39,22 @@ pub async fn validator(
 
     match claims {
         Ok(value) => {
+            if value.expiry_date
+                < SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+            {
+                let config = Config::default().scope("");
+
+                return Err((AuthenticationError::from(config).into(), req));
+            }
+
             req.extensions_mut().insert(value);
             Ok(req)
         }
         Err(_) => {
-            let config = req
-                .app_data::<bearer::Config>()
-                .cloned()
-                .unwrap_or_default()
-                .scope("");
+            let config = Config::default().scope("");
 
             Err((AuthenticationError::from(config).into(), req))
         }

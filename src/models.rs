@@ -113,6 +113,7 @@ pub struct NewUser {
 #[derive(Serialize, Deserialize)]
 pub struct TokenClaims {
     pub id: i32,
+    pub expiry_date: u128,
 }
 
 #[derive(Serialize, Deserialize, Queryable, Debug)]
