@@ -35,6 +35,7 @@ use hmac::Hmac;
 use jwt::SignWithKey;
 use sha2::Sha256;
 use std::io::Result;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[actix_web::main]
 async fn main() -> Result<()> {
@@ -222,8 +223,14 @@ async fn login(payload: Json<LoginPayload>) -> impl Responder {
                 .unwrap();
 
             if is_valid {
+                let expiry_date = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    + 24 * 60 * 60 * 1000;
                 let claims = TokenClaims {
                     id: database_user.id,
+                    expiry_date,
                 };
                 let token_str = claims.sign_with_key(&jwt_secret).unwrap();
 
@@ -816,27 +823,43 @@ mod tests {
         use crate::database::DataBase;
         use crate::get_tickets;
         use crate::middleware::validator;
-        use crate::models::NewSession;
+        use crate::models::{NewSession, TokenClaims};
         use crate::schema::sessions::dsl::sessions;
         use actix_web::http::StatusCode;
         use actix_web::{test, web};
         use actix_web_httpauth::middleware::HttpAuthentication;
         use diesel::RunQueryDsl;
+        use hmac::{Hmac, Mac};
+        use jwt::SignWithKey;
         use serial_test::serial;
+        use sha2::Sha256;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
         #[actix_web::test]
         #[serial]
-        async fn test_middleware() {
+        async fn test_expiry_date() {
             setup_database();
 
-            // bearer for "123"
-            let bearer_token =
-                "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6MX0.oi92tHHWj5HdQO8Hd9vIYD6suTWosoiBnpdRBIcNGpM";
+            let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(
+                std::env::var("JWT_SECRET")
+                    .expect("JWT_SECRET must be set!")
+                    .as_bytes(),
+            )
+            .unwrap();
+
+            let expiry_date = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+                // 24 hours in present
+                - 24 * 60 * 60 * 1000;
+            let claims = TokenClaims { id: 1, expiry_date };
+            let token_str = claims.sign_with_key(&jwt_secret).unwrap();
 
             let mut db = DataBase::new();
             diesel::insert_into(sessions)
                 .values(NewSession {
-                    token: bearer_token.to_string(),
+                    token: token_str.clone(),
                 })
                 .execute(&mut db.connection)
                 .unwrap();
@@ -851,7 +874,53 @@ mod tests {
             .await;
             let req = TestRequest::get()
                 .uri("/tickets")
-                .insert_header(("Authorization", format!("Bearer {bearer_token}")))
+                .insert_header(("Authorization", format!("Bearer {token_str}")))
+                .to_request();
+
+            let response = test::call_service(&app, req).await;
+
+            assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+        }
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_middleware() {
+            setup_database();
+
+            let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(
+                std::env::var("JWT_SECRET")
+                    .expect("JWT_SECRET must be set!")
+                    .as_bytes(),
+            )
+            .unwrap();
+
+            let expiry_date = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+                + 24 * 60 * 60 * 60 * 1000;
+            let claims = TokenClaims { id: 1, expiry_date };
+            let token_str = claims.sign_with_key(&jwt_secret).unwrap();
+
+            let mut db = DataBase::new();
+            diesel::insert_into(sessions)
+                .values(NewSession {
+                    token: token_str.clone(),
+                })
+                .execute(&mut db.connection)
+                .unwrap();
+
+            let app = test::init_service(
+                App::new().service(
+                    web::scope("")
+                        .wrap(HttpAuthentication::bearer(validator))
+                        .service(get_tickets),
+                ),
+            )
+            .await;
+            let req = TestRequest::get()
+                .uri("/tickets")
+                .insert_header(("Authorization", format!("Bearer {token_str}")))
                 .to_request();
 
             let response = test::call_service(&app, req).await;
