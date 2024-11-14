@@ -28,13 +28,13 @@ Cira gives you the foundation to:
 Simply clone the repository, set up the database and compile the application locally.
 Then start it.
 You are required to have installed: [the rust programming language](https://rust-lang.org),
-[git](https://git-scm.com/), [diesel](https://diesel.rs)
+[git](https://git-scm.com/), [diesel](https://diesel.rs), [sqlite](https://www.sqlite.org/)
 
 ```bash
 git clone https://github.com/CodeF0x/cira.git
 cd cira
-cargo install diesel_cli
-diesel run migration --database-url cira-backend.sqlite
+cargo install diesel_cli --no-default-features --features "sqlite"
+diesel setup
 cargo build --release
 ./target/release/cira
 ```
@@ -42,16 +42,20 @@ cargo build --release
 If you're on Debian and get `error: linking with 'cc' failed: exit status: 1`, make sure to have `build-essential`
 installed. Same goes for other distros (build-essential might be called different / have an equivalent).
 
+If this error accours while installing `diesel_cli`, try `sudo apt install -y libsqlite3-dev libpq-dev libmysqlclient-dev`.
+
 There are some default values set in the .env file, you can adjust them as you wish.
 Keep in mind to change the code as well. For example, if you change the database file name, change it in the .env file
 as well.
+
+If everything went well and there is no output after running the last command, cira is listening on port `8080`.
 
 You can also launch it in a screen or in a container, so it runs without an active shell session.
 
 ## Running Tests
 
 To run tests, set up a fake database that is independent of the actual production database.
-You need to have installed [diesel](https://diesel.rs), and [rust](https://rust-lang.org).
+You need to have installed [diesel](https://diesel.rs), [sqlite](https://www.sqlite.org/) and [rust](https://rust-lang.org).
 
 ```bash
 diesel migration run --database-url test-backend.sqlite
