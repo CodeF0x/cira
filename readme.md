@@ -45,8 +45,8 @@ installed. Same goes for other distros (build-essential might be called differen
 If this error accours while installing `diesel_cli`, try `sudo apt install -y libsqlite3-dev libpq-dev libmysqlclient-dev`.
 
 There are some default values set in the .env file, you can adjust them as you wish.
-Keep in mind to change the code as well. For example, if you change the database file name, change it in the .env file
-as well.
+Keep in mind to change the code as well.
+> ⚠️ Be sure to update both `HASH_SECRET` and `JWT_SECRET` to something cryptographically safe! 
 
 If everything went well and there is no output after running the last command, cira is listening on port `8080`.
 
