@@ -48,6 +48,7 @@ There are some default values set in the .env file, you can adjust them as you w
 Keep in mind to change the code as well.
 > ⚠️ Be sure to update both `HASH_SECRET` and `JWT_SECRET` to something cryptographically safe! 
 
+If everything went well and there is no output after running the last command, cira is listening on port `8080`.
 
 You can also launch it in a screen or in a container, so it runs without an active shell session.
 
