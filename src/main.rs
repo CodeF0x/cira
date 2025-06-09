@@ -25,7 +25,7 @@ use actix_cors::Cors;
 use actix_web::cookie::time::Duration;
 use actix_web::cookie::Cookie;
 use actix_web::web::{Json, Path};
-use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{delete, get, post, put, web, App, HttpResponse, HttpServer, Responder};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use argonautica::Verifier;
@@ -118,7 +118,7 @@ async fn filter_tickets(payload: Json<FilterPayload>) -> impl Responder {
     }
 }
 
-#[post("/tickets/{id}")]
+#[put("/tickets/{id}")]
 async fn edit(payload: Json<TicketPayload>, ticket_id: Path<i32>) -> impl Responder {
     let ticket_id: i32 = ticket_id.into_inner();
 
@@ -411,7 +411,7 @@ mod tests {
                 "labels": []
             });
 
-            let req = TestRequest::post()
+            let req = TestRequest::put()
                 .uri("/tickets/-1")
                 .set_json(payload)
                 .to_request();
@@ -457,7 +457,7 @@ mod tests {
             });
 
             let app = test::init_service(App::new().service(edit)).await;
-            let req = TestRequest::post()
+            let req = TestRequest::put()
                 .uri("/tickets/1")
                 .set_json(payload)
                 .to_request();
