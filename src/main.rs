@@ -22,7 +22,7 @@ use crate::status_messages::{
     ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGOUT,
 };
 use actix_cors::Cors;
-use actix_web::cookie::time::Duration;
+use actix_web::cookie::time::{Duration, OffsetDateTime};
 use actix_web::cookie::Cookie;
 use actix_web::web::{Json, Path};
 use actix_web::{delete, get, post, put, web, App, HttpResponse, HttpServer, Responder};
@@ -241,8 +241,10 @@ async fn login(payload: Json<LoginPayload>) -> impl Responder {
                     &mut database.connection,
                 );
 
+                let cookie_expiry = OffsetDateTime::now_utc() + Duration::days(1);
                 let bearer_cookie = Cookie::build("cira-bearer-token", &token_str)
                     .http_only(false)
+                    .expires(cookie_expiry)
                     .finish();
                 HttpResponse::Ok().cookie(bearer_cookie).body(token_str)
             } else {
