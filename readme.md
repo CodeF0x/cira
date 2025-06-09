@@ -67,7 +67,7 @@ cargo test
 #### Create a new ticket
 
 ```http
-  POST /tickets
+  POST /api/tickets
 ```
 
 Your payload must be valid JSON and contain the following properties:
@@ -98,7 +98,7 @@ Creates a new ticket and returns it.
 #### Get tickets
 
 ```http
-  GET /tickets
+  GET /api/tickets
 ```
 
 Get all tickets.
@@ -106,7 +106,7 @@ Get all tickets.
 #### Delete ticket
 
 ```http
-  DELETE /tickets/{id}
+  DELETE /api/tickets/{id}
 ```
 
 URL parameters:
@@ -120,7 +120,7 @@ Deletes a ticket and returns it.
 #### Edit a ticket
 
 ```http
-  POST /tickets/{id}
+  PUT /api/tickets/{id}
 ```
 
 URL parameters:
@@ -157,7 +157,7 @@ Updates a ticket and returns it.
 #### Sign up
 
 ```
-  POST /users
+  POST /api/signup
 ```
 
 Your payload must be valid JSON and contain the following properties:
@@ -173,7 +173,7 @@ Create a new user and return it.
 #### Filter tickets
 
 ```http
-  POST /filter
+  POST /api/filter
 ```
 
 Your payload must be valid JSON and contain the following properties:
