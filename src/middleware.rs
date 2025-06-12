@@ -39,11 +39,11 @@ pub async fn validator(
 
     match claims {
         Ok(value) => {
-            if value.expiry_date
+            if value.exp
                 < SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_millis()
+                    .as_secs()
             {
                 let config = Config::default().scope("");
 

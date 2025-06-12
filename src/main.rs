@@ -223,14 +223,14 @@ async fn login(payload: Json<LoginPayload>) -> impl Responder {
                 .unwrap();
 
             if is_valid {
-                let expiry_date = SystemTime::now()
+                let exp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_millis()
-                    + 24 * 60 * 60 * 1000;
+                    .as_secs()
+                    + 24 * 60 * 60;
                 let claims = TokenClaims {
                     id: database_user.id,
-                    expiry_date,
+                    exp,
                 };
                 let token_str = claims.sign_with_key(&jwt_secret).unwrap();
 
@@ -849,13 +849,13 @@ mod tests {
             )
             .unwrap();
 
-            let expiry_date = SystemTime::now()
+            let exp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis()
-                // 24 hours in present
-                - 24 * 60 * 60 * 1000;
-            let claims = TokenClaims { id: 1, expiry_date };
+                .as_secs()
+                // 24 hours in past
+                - 24 * 60 * 60;
+            let claims = TokenClaims { id: 1, exp };
             let token_str = claims.sign_with_key(&jwt_secret).unwrap();
 
             let mut db = DataBase::new();
@@ -896,12 +896,12 @@ mod tests {
             )
             .unwrap();
 
-            let expiry_date = SystemTime::now()
+            let exp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis()
-                + 24 * 60 * 60 * 60 * 1000;
-            let claims = TokenClaims { id: 1, expiry_date };
+                .as_secs()
+                + 24 * 60 * 60;
+            let claims = TokenClaims { id: 1, exp };
             let token_str = claims.sign_with_key(&jwt_secret).unwrap();
 
             let mut db = DataBase::new();
