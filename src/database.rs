@@ -2,7 +2,8 @@ use crate::filters::{
     filter_by_assigned_user, filter_by_labels, filter_by_status, filter_by_title,
 };
 use crate::models::{
-    DataBaseUser, DatabaseSession, NewSession, NewTicket, NewUser, SqliteTicket, Status, Ticket,
+    DataBaseUser, DatabaseSession, DisplayUser, NewSession, NewTicket, NewUser, SqliteTicket,
+    Status, Ticket,
 };
 use crate::payloads::{FilterPayload, TicketPayload};
 use crate::schema::sessions::dsl::sessions;
@@ -10,7 +11,7 @@ use crate::schema::sessions::token;
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, status, title};
 use crate::schema::users::dsl::users;
-use crate::schema::users::email;
+use crate::schema::users::{display_name, email};
 use actix_web::web::Json;
 use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
@@ -140,6 +141,12 @@ pub fn get_user_by_email(
     connection: &mut SqliteConnection,
 ) -> QueryResult<DataBaseUser> {
     users.filter(email.eq(user_email)).get_result(connection)
+}
+
+pub fn get_all_users(connection: &mut SqliteConnection) -> QueryResult<Vec<DisplayUser>> {
+    users
+        .select((email, display_name))
+        .load::<DisplayUser>(connection)
 }
 
 pub fn filter_tickets_in_database(
