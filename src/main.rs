@@ -786,6 +786,7 @@ mod tests {
 
             assert_eq!(response[0].email, "test@example.com");
             assert_eq!(response[0].display_name, "user");
+            assert_eq!(response[0].id, 1);
         }
     }
 

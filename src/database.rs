@@ -11,7 +11,7 @@ use crate::schema::sessions::token;
 use crate::schema::tickets::dsl::tickets;
 use crate::schema::tickets::{body, id, labels, last_modified, status, title};
 use crate::schema::users::dsl::users;
-use crate::schema::users::{display_name, email};
+use crate::schema::users::{display_name, email, id as user_id};
 use actix_web::web::Json;
 use argonautica::Hasher;
 use diesel::{Connection, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection};
@@ -145,7 +145,7 @@ pub fn get_user_by_email(
 
 pub fn get_all_users(connection: &mut SqliteConnection) -> QueryResult<Vec<DisplayUser>> {
     users
-        .select((email, display_name))
+        .select((user_id, email, display_name))
         .load::<DisplayUser>(connection)
 }
 

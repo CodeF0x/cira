@@ -1,201 +1,193 @@
-> Warning: You should probably not use this in production or with any data that is sensitive as the authentication
-> system
-> is made very amateurish.
+# Cira - A Minimalistic Ticket System Backend
 
-# Cira - a minimalistic ticket system backend
+Cira is a minimalistic backend for managing tickets in small projects. It provides essential APIs to handle ticket creation, updates, deletion, labeling, assignment, and filtering.
 
-Cira is a minimalistic ticket system backend for small and simple projects.
-You could even use it as an overcomplicated todo app.
+## Overview
+Cira offers foundational API functionalities for managing tickets including:
+- Creation and deletion of tickets
+- Updating existing tickets
+- Grouping tickets by labels
+- Assigning tickets to users
+- Filtering tickets by various criteria
+- User authentication via bearer tokens
 
-The only thing it does is to provide an api.
-The rest is up to you.
-Create a native desktop or smartphone app, or keep in the web as most ticket boards to.
-You decide, the possibilities are endless.
+## Setup & Usage
 
-## Features
+### Prerequisites
+Ensure you have installed the following tools:
+- [Rust](https://rust-lang.org)
+- [Git](https://git-scm.com/)
+- [Diesel](https://diesel.rs)
+- [SQLite](https://www.sqlite.org/)
 
-Cira gives you the foundation to:
+### Running Locally
 
-- create and delete tickets
-- update tickets after creation
-- group tickets by labels
-- assign tickets to users
-- filter tickets by labels, assignee, status and labels
-- authentication with bearer tokens
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/CodeF0x/cira.git
+   cd cira
+   ```
+2. **Install Diesel CLI for SQLite** and set up database:
+   ```bash
+   cargo install diesel_cli --no-default-features --features "sqlite"
+   diesel setup
+   ```
+3. **Build and run**:
+   ```bash
+   cargo build --release
+   ./target/release/cira
+   ```
 
-## Run Locally
+**Note**: Make sure to update both `HASH_SECRET` and `JWT_SECRET` in the `.env` file with cryptographically secure values!
 
-Simply clone the repository, set up the database and compile the application locally.
-Then start it.
-You are required to have installed: [the rust programming language](https://rust-lang.org),
-[git](https://git-scm.com/), [diesel](https://diesel.rs), [sqlite](https://www.sqlite.org/)
+### Troubleshooting
 
-```bash
-git clone https://github.com/CodeF0x/cira.git
-cd cira
-cargo install diesel_cli --no-default-features --features "sqlite"
-diesel setup
-cargo build --release
-./target/release/cira
-```
+If you encounter errors during installation or setup:
+- On Debian, if you get a `linking with 'cc' failed: exit status: 1` error, ensure `build-essential` is installed.
+- For issues while installing Diesel CLI, try running: `sudo apt install -y libsqlite3-dev libpq-dev libmysqlclient-dev`.
 
-If you're on Debian and get `error: linking with 'cc' failed: exit status: 1`, make sure to have `build-essential`
-installed. Same goes for other distros (build-essential might be called different / have an equivalent).
+---
 
-If this error accours while installing `diesel_cli`, try `sudo apt install -y libsqlite3-dev libpq-dev libmysqlclient-dev`.
+## API Documentation
 
-There are some default values set in the .env file, you can adjust them as you wish.
-Keep in mind to change the code as well.
-> ⚠️ Be sure to update both `HASH_SECRET` and `JWT_SECRET` to something cryptographically safe! 
+### General Information
+- **Authorization**: Every endpoint requires a Bearer Token for authentication except the endpoints related to user login and signup (`/api/login` and `/api/signup`).
 
-If everything went well and there is no output after running the last command, cira is listening on port `8080`.
+### Ticket Management
 
-You can also launch it in a screen or in a container, so it runs without an active shell session.
-
-## Running Tests
-
-To run tests, set up a fake database that is independent of the actual production database.
-You need to have installed [diesel](https://diesel.rs), [sqlite](https://www.sqlite.org/) and [rust](https://rust-lang.org).
-
-```bash
-diesel migration run --database-url test-backend.sqlite
-cargo test
-```
-
-## API Reference
-
-#### Create a new ticket
+#### Create a New Ticket
 
 ```http
-  POST /api/tickets
+POST /api/tickets
 ```
 
-Your payload must be valid JSON and contain the following properties:
+**Payload**:
 
 | Property        | Type            | Description                                                                   |
 |:----------------|:----------------|:------------------------------------------------------------------------------|
-| `title`         | `string`        | **Required**. The title of your ticket                                        |
-| `body`          | `string`        | **Required**. The body of your ticket                                         |
-| `labels`        | `Array<string>` | **Required**. Labels of your ticket                                           |
-| `status`        | `string`        | **Required**. The status of your ticket (set it to "Open")                    |
-| `assigned_user` | `id \| null`    | **Optional**. A user the ticket should be assigned to. Can be omitted or null |
+| `title`         | `string`        | **Required**. Title of the ticket                                            |
+| `body`          | `string`        | **Required**. Body content of the ticket                                     |
+| `labels`        | `Array<string>` | **Required**. Labels for categorizing the ticket                            |
+| `status`        | `string`        | **Required**. Status (e.g., 'Open')                                         |
+| `assigned_user` | `id \| null`    | **Optional**. ID of user assigned to this ticket or `null`.                  |
 
-Possible Status options:
+**Status Options**:
 
-- `Open`
-- `Closed`
+- Open
+- Closed
 
-Possible Label options:
+**Label Options**:
 
-- `Feature`
-- `Bug`
-- `WontFix`
-- `Done`
-- `InProgress`
+- Feature
+- Bug
+- WontFix
+- Done
+- InProgress
 
-Creates a new ticket and returns it.
-
-#### Get tickets
+#### Get All Tickets
 
 ```http
-  GET /api/tickets
+GET /api/tickets
 ```
 
-Get all tickets.
+Retrieves all tickets.
 
-#### Delete ticket
+#### Delete a Ticket
 
 ```http
-  DELETE /api/tickets/{id}
+DELETE /api/tickets/{id}
 ```
 
-URL parameters:
+**Path Parameters**:
 
-| Property | Type     | Description                        |
-|:---------|:---------|:-----------------------------------|
-| `id`     | `number` | **Required**. The id of the ticket |
+| Parameter | Type   | Description                        |
+|:----------|:-------|:-----------------------------------|
+| `id`      | number | **Required**. ID of the ticket     |
 
-Deletes a ticket and returns it.
-
-#### Edit a ticket
+#### Edit a Ticket
 
 ```http
-  PUT /api/tickets/{id}
+PUT /api/tickets/{id}
 ```
 
-URL parameters:
+**Path Parameters**: (Same as Delete Ticket)
 
-| Property | Type     | Description                        |
-|:---------|:---------|:-----------------------------------|
-| `id`     | `number` | **Required**. The id of the ticket |
+**Payload**: (Same structure as Create a New Ticket)
 
-Your payload must be valid JSON and contain the following properties:
+### User Authentication
 
-| Property        | Type            | Description                                                                   |
-|:----------------|:----------------|:------------------------------------------------------------------------------|
-| `title`         | `string`        | **Required**. The title of your ticket                                        |
-| `body`          | `string`        | **Required**. The body of your ticket                                         |
-| `labels`        | `Array<string>` | **Required**. Labels of your ticket                                           |
-| `status`        | `string`        | **Required**. The status of your ticket (set it to "Open")                    |
-| `assigned_user` | `id \| null`    | **Optional**. A user the ticket should be assigned to. Can be omitted or null |
-
-Possible Status options:
-
-- `Open`
-- `Closed`
-
-Possible Label options:
-
-- `Feature`
-- `Bug`
-- `WontFix`
-- `Done`
-- `InProgress`
-
-Updates a ticket and returns it.
-
-#### Sign up
-
-```
-  POST /api/signup
-```
-
-Your payload must be valid JSON and contain the following properties:
-
-| Property       | Type     | Description                            |
-|:---------------|:---------|:---------------------------------------|
-| `display_name` | `string` | **Required**. The user's display name  |
-| `email`        | `string` | **Required**. The user's email address |
-| `password`     | `string` | **Required**. The user's password      |
-
-Create a new user and return it.
-
-#### Filter tickets
+#### Sign Up
 
 ```http
-  POST /api/filter
+POST /api/signup
 ```
 
-Your payload must be valid JSON and contain the following properties:
+**Payload**:
+
+| Property       | Type   | Description                            |
+|:---------------|:-------|:---------------------------------------|
+| `display_name` | string | **Required**. Display name             |
+| `email`        | string | **Required**. Email address            |
+| `password`     | string | **Required**. Password                 |
+
+#### Login
+
+```http
+POST /api/login
+```
+
+**Payload**:
+
+| Property  | Type   | Description                            |
+|:----------|:-------|:---------------------------------------|
+| `email`   | string | **Required**. Email address            |
+| `password` | string | **Required**. Password                 |
+
+Returns a bearer token upon successful login.
+
+#### Logout
+
+```http
+POST /api/logout
+```
+
+Logs out the user by invalidating their current token.
+
+### User Management
+
+#### Get All Users
+
+```http
+GET /api/users
+```
+
+Retrieves all users in a simplified format (`id`, `email`, `display_name`).
+
+### Filter Tickets
+
+```http
+POST /api/filter
+```
+
+**Payload**:
 
 | Property        | Type                    | Description                                                     |
 |:----------------|:------------------------|:----------------------------------------------------------------|
 | `title`         | `string \| null`        | **Optional**. Title to search for. Can be omitted or null       |
 | `labels`        | `Array<string> \| null` | **Optional**. Labels to search for. Can be omitted or null      |
 | `status`        | `string \| null`        | **Optional**. Status to search for. Can be omitted or null      |
-| `assigned_user` | `id \| null`            | **Optional**. Assignee id to search for. Can be omitted or null |
+| `assigned_user` | `id \| null`            | **Optional**. Assignee ID to search for. Can be omitted or null |
 
-Lets you filter for tickets and return results.
+Returns filtered results.
+
+---
 
 ## Contributing
 
-Contributions are always welcome!
+Contributions in any form (issues, PRs, feedback) are welcome!
 
-Either by submitting issues, pull requests or just general constructive feedback in the form of issues,
-emails or direct messages on Telegram.
+---
 
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
-
-MIT or "I do not care what you do with this as long as you don't claim it to be your own"-license.

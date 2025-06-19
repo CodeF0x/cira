@@ -103,6 +103,7 @@ pub struct DataBaseUser {
 
 #[derive(Serialize, Deserialize, Debug, Queryable)]
 pub struct DisplayUser {
+    pub id: i32,
     pub email: String,
     pub display_name: String,
 }
