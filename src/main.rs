@@ -9,7 +9,7 @@ mod test_helpers;
 
 use crate::database::{
     create_ticket, create_user, delete_ticket, edit_ticket, filter_tickets_in_database,
-    get_all_tickets, get_single_ticket, get_user_by_email, remove_session_from_db,
+    get_all_tickets, get_all_users, get_single_ticket, get_user_by_email, remove_session_from_db,
     write_session_to_db, DataBase,
 };
 use crate::middleware::validator;
@@ -17,9 +17,9 @@ use crate::models::{NewSession, NewUser, Ticket, TokenClaims};
 use crate::payloads::{FilterPayload, LoginPayload, TicketPayload};
 use crate::status_messages::{
     CANNOT_LOGOUT, ERROR_COULD_NOT_CREATE_TICKET, ERROR_COULD_NOT_CREATE_USER,
-    ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_UPDATE, ERROR_INCORRECT_PASSWORD,
-    ERROR_INVALID_ID, ERROR_NOT_FOUND, ERROR_NOT_LOGGED_IN, ERROR_NO_USER_FOUND,
-    ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGOUT,
+    ERROR_COULD_NOT_DELETE, ERROR_COULD_NOT_GET, ERROR_COULD_NOT_RETRIEVE_USERS,
+    ERROR_COULD_NOT_UPDATE, ERROR_INCORRECT_PASSWORD, ERROR_INVALID_ID, ERROR_NOT_FOUND,
+    ERROR_NOT_LOGGED_IN, ERROR_NO_USER_FOUND, ERROR_USER_ALREADY_EXISTS, SUCCESS_LOGOUT,
 };
 use actix_cors::Cors;
 use actix_web::cookie::time::{Duration, OffsetDateTime};
@@ -54,7 +54,8 @@ async fn main() -> Result<()> {
                     .service(delete)
                     .service(edit)
                     .service(filter_tickets)
-                    .service(logout),
+                    .service(logout)
+                    .service(get_users),
             ),
         )
     })
@@ -255,6 +256,16 @@ async fn login(payload: Json<LoginPayload>) -> impl Responder {
             Error::NotFound => HttpResponse::NotFound().json(ERROR_NO_USER_FOUND),
             _ => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_CREATE_USER),
         },
+    }
+}
+
+#[get("/users")]
+async fn get_users() -> impl Responder {
+    let mut database = DataBase::new();
+
+    match get_all_users(&mut database.connection) {
+        Ok(all_users) => HttpResponse::Ok().json(all_users),
+        Err(_) => HttpResponse::InternalServerError().json(ERROR_COULD_NOT_RETRIEVE_USERS),
     }
 }
 
@@ -751,6 +762,30 @@ mod tests {
             let response = test::call_service(&app, req).await;
 
             assert_eq!(response.status().as_u16(), StatusCode::NOT_FOUND);
+        }
+    }
+
+    mod test_get_users {
+        use actix_web::{
+            test::{self, TestRequest},
+            App,
+        };
+        use serial_test::serial;
+
+        use crate::{get_users, models::DisplayUser, test_helpers::helpers::setup_database};
+
+        #[actix_web::test]
+        #[serial]
+        async fn test_get_all_users() {
+            setup_database();
+
+            let app = test::init_service(App::new().service(get_users)).await;
+            let req = TestRequest::get().uri("/users").to_request();
+
+            let response: Vec<DisplayUser> = test::call_and_read_body_json(&app, req).await;
+
+            assert_eq!(response[0].email, "test@example.com");
+            assert_eq!(response[0].display_name, "user");
         }
     }
 

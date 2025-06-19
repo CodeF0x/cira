@@ -101,6 +101,12 @@ pub struct DataBaseUser {
     pub password: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Queryable)]
+pub struct DisplayUser {
+    pub email: String,
+    pub display_name: String,
+}
+
 #[derive(Serialize, Deserialize, Insertable)]
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

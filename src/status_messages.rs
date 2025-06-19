@@ -11,6 +11,7 @@ pub const ERROR_COULD_NOT_CREATE_USER: &str = "Could not create user";
 pub const ERROR_INCORRECT_PASSWORD: &str = "Incorrect email or password";
 pub const ERROR_NO_USER_FOUND: &str = "No user found";
 pub const ERROR_USER_ALREADY_EXISTS: &str = "User with that email already exists";
+pub const ERROR_COULD_NOT_RETRIEVE_USERS: &str = "Could not retriever users";
 
 // success messages
 pub const SUCCESS_LOGOUT: &str = "Successfully logged out";
